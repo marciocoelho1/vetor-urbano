@@ -12,13 +12,18 @@ O **Vetor Urbano** é uma plataforma corporativa e cívica voltada ao monitorame
 
 O projeto une a experiência operacional e de gestão de contingências críticas do autor com engenharia de software de alta performance, aplicando processamento espacial (PostGIS), transmissão reativa de eventos em baixa latência e controle de acesso estrito com conformidade à LGPD.
 
+### 1.1. Escopo Geográfico do MVP
+* **Região:** Região Metropolitana do Rio de Janeiro (RMRJ).
+* **Foco Territorial:** Município do Rio de Janeiro e Baixada Fluminense (Duque de Caxias, Nova Iguaçu, Belford Roxo, São João de Meriti, Nilópolis, Mesquita, Magé, Guapimirim, Queimados, Japeri, Paracambi, Seropédica e Itaguaí).
+* **Envelope Bounding Box (EPSG:4326):** `ST_MakeEnvelope(-43.9000, -23.1000, -42.9500, -22.4500, 4326)`.
+
 ---
 
 ## 2. Changelog & Histórico de Versões
 
 | Versão | Data | Marco / Entregáveis | Status |
 | :--- | :--- | :--- | :--- |
-| **`v0.1.0-alpha`** | 2026-09-24 | Inception do Produto: Definição de escopo PO, revisão crítica de arquitetura (RF01-RF08, RNF01-RNF08), mitigação de gargalos de escalabilidade e criação do repositório base. | **Concluído** |
+| **`v0.1.0-alpha`** | 2026-09-24 | Inception do Produto: Definição de escopo PO, revisão crítica de arquitetura (RF01-RF11, RNF01-RNF11, RN-GEO, RN-MT, RN-AD), mitigação de gargalos de escalabilidade e criação do repositório base. | **Concluído** |
 | `v0.2.0-alpha` | A definir | DBA & Modelagem Espacial: Esquema 3NF PostgreSQL + PostGIS, índices espaciais GiST, migrações estruturadas (Flyway) e auditoria. | Planejado |
 | `v0.3.0-alpha` | A definir | UX/UI & Wireframes: Mapeamento de fluxos de telas (Cidadão vs Operador vs Gestor) e contratos de API (OpenAPI 3.1). | Planejado |
 | `v0.4.0-alpha` | A definir | Core Backend: API RESTful Java 21+ / Spring Boot 3 com Spring Security, Argon2id, JWT/MFA e endpoints espaciais. | Planejado |
@@ -40,6 +45,9 @@ O projeto une a experiência operacional e de gestão de contingências crítica
 - **RF06 - Controle de Acesso Baseado em Funções (RBAC):** Níveis de permissão granulares para `CITIZEN` (Cidadão), `OPERATOR` (Operador de Triagem) e `MANAGER` (Gestor de Crise / Admin).
 - **RF07 - Gestão de Operadores e Credenciais:** Painel administrativo do Gestor para provisionamento, ativação, revogação e auditoria de contas operacionais.
 - **RF08 - Moderação de Incidentes em Tempo Real:** Fila operacional de atendimento e moderação de ocorrências para validar seriedade, descartar trotes e alterar status de eventos.
+- **RF09 - Mancha Térmica Dinâmica (Heatmap por Categoria):** Alternância instantânea entre marcadores (pins) e mancha térmica com interpolação WebGL, ponderada por severidade e decaimento temporal.
+- **RF10 - Camada de Áreas Conflagradas / Dominadas:** Sobreposição cartográfica de polígonos delimitadores de territórios sob influência de grupos armados (CV, TCP, ADA, Milícia, Disputa) no RJ e Baixada.
+- **RF11 - Ingestão de Dados Cartográficos Vetoriais:** Pipeline para importação, sanitização topológica (`ST_IsValid`) e persistência de arquivos vetoriais em formato XML/KML/GeoJSON.
 
 ### 3.2. Requisitos Não-Funcionais (RNF)
 
@@ -51,6 +59,9 @@ O projeto une a experiência operacional e de gestão de contingências crítica
 - **RNF06 - Criptografia de Credenciais:** Derivação segura de senhas via **Argon2id** com salt criptográfico único por usuário.
 - **RNF07 - Gestão e Revogação Imediata de Sessão:** Tokens de curta duração (15 minutos) com rotação de Refresh Token e lista de revogação imediata (*blocklist*) armazenada em memória rápida (Redis).
 - **RNF08 - Autenticação Multifator Obrigatória (MFA):** Exigência de TOTP (RFC 6238 via Google Authenticator/Authy) para perfis de alta criticidade (`MANAGER`).
+- **RNF09 - Desempenho de Shader WebGL ($\le 250\text{ms}$):** Renderização da camada térmica inteiramente na GPU sem bloqueio do thread da interface.
+- **RNF10 - Indexação e Simplificação de Polígonos ($\le 50\text{ms}$):** Suporte a polígonos complexos via `ST_SimplifyPreserveTopology` e indexação `GiST` para testes rápidos de contenção.
+- **RNF11 - Validação $O(1)$ de Limites do MVP:** Bloqueio de coordenadas fora do Bounding Box metropolitano na camada de borda.
 
 ---
 

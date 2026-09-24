@@ -20,9 +20,39 @@ Ao contrário de plataformas puramente colaborativas que sofrem com alertas obso
 2. Moderação operacional B2B/B2G.
 3. Difusão de alertas em tempo real com baixo consumo de recursos e preservação de privacidade.
 
+### 1.1. Delimitação Geográfica do MVP (Região Metropolitana do Rio de Janeiro & Baixada)
+
+Para garantir densidade estatística de dados, viabilidade operacional e validação de alta performance antes da escala nacional, o MVP do Vetor Urbano possui escopo geográfico estrito:
+* **Município Polo:** Cidade do Rio de Janeiro (todas as zonas: Central, Sul, Norte, Oeste).
+* **Baixada Fluminense:** Duque de Caxias, Nova Iguaçu, Belford Roxo, São João de Meriti, Nilópolis, Mesquita, Magé, Guapimirim, Queimados, Japeri, Paracambi, Seropédica e Itaguaí.
+* **Envelope Cartográfico Bounding Box (PostGIS EPSG:4326):**
+  $$\text{Bounding Box Envelope} = \text{ST\_MakeEnvelope}(-43.9000, -23.1000, -42.9500, -22.4500, 4326)$$
+  * Longitude Mínima (Oeste): `-43.9000` (limites de Itaguaí/Paracambi)
+  * Longitude Máxima (Leste): `-42.9500` (Baía de Guanabara / limites com Niterói e Magé)
+  * Latitude Mínima (Sul): `-23.1000` (Orla marítima / Restinga da Marambaia)
+  * Latitude Máxima (Norte): `-22.4500` (Serra / limites de Japeri e Guapimirim)
+
 ---
 
-## 2. Parecer Técnico do Arquiteto & Refinamento de Requisitos
+## 2. Regras de Negócio Fundamentais (RN)
+
+* **RN-GEO01 (Restrição de Ingestão ao Bounding Box do MVP):** Toda tentativa de cadastro de incidente ou consulta fora das coordenadas do envelope da RMRJ deve ser rejeitada pela camada de validação da API com erro `422 Unprocessable Entity (GEO_OUT_OF_BOUNDS)`.
+* **RN-MT01 (Ponderação Multivariada do Heatmap):** A intensidade da mancha térmica não é uma contagem cega de ocorrências. Cada ponto contribui com peso ponderado pela sua severidade (`CRITICAL` = 4x, `HIGH` = 3x, `MEDIUM` = 2x, `LOW` = 1x) multiplicado pelo fator de decaimento temporal ($e^{-\lambda \Delta t}$).
+* **RN-MT02 (Filtro Categorial Exclusivo):** Ao ligar a mancha térmica, o usuário pode filtrar por categoria específica (ex: apenas "Alagamento", apenas "Confronto Armado" ou "Colisão Viária"). A mancha recalcula exclusivamente os pontos daquela classe.
+* **RN-MT03 (Comportamento de Camada Cartográfica):** O usuário pode alternar entre: 1) Marcadores (Pins individuais); 2) Mancha Térmica (Heatmap puro); 3) Modo Adaptativo (Heatmap em visão macro de zoom out, com desdobramento em pins individuais a partir do nível de zoom $\ge 14$).
+* **RN-AD01 (Classificação e Tipologia de Facções / Milícias):** Os polígonos de domínio territorial devem ser classificados compulsoriamente nas seguintes categorias padronizadas:
+  * `COMANDO_VERMELHO` (CV - Vermelho)
+  * `TERCEIRO_COMANDO_PURO` (TCP - Azul / Verde)
+  * `AMIGOS_DOS_AMIGOS` (ADA - Amarelo / Laranja)
+  * `MILICIA` (ML - Cinza / Preto)
+  * `DISPUTA` (DISPUTE - Roxo / Hachurado dinâmico)
+* **RN-AD02 (Governança e Carga Exclusiva):** A inclusão e alteração de polígonos territoriais de facções é estritamente restrita a perfis `OPERATOR` e `MANAGER` via pipeline de ingestão de dados abertos consolidados (formato XML/KML/GeoJSON). Cidadãos não podem desenhar ou editar polígonos territoriais.
+* **RN-AD03 (Isenção Ética e Termo de Uso):** A exibição de áreas conflagradas visa exclusivamente à segurança física e corporativa preventiva, contendo aviso legal de caráter estatístico de segurança pública e respeito aos moradores das comunidades.
+* **RN-AD04 (Integração Operacional com Risco e Roteamento):** Polígonos de áreas conflagradas ativas podem ser vinculados como multiplicadores de risco nas rotas de deslocamento (RF05) e disparadores de alerta de proximidade (RF03).
+
+---
+
+## 3. Parecer Técnico do Arquiteto & Refinamento de Requisitos
 
 Abaixo, cada requisito levantado na fase de ideação de Produto é decomposto tecnicamente, apontando riscos arquiteturais, mitigações e especificações de engenharia.
 
@@ -114,9 +144,30 @@ Abaixo, cada requisito levantado na fase de ideação de Produto é decomposto t
 #### RF08 – Fila de Moderação em Tempo Real
 * **Funcionalidades:** Visualização em tabela/grid Kanban para Operadores e Gestores contendo ocorrências com status `REPORTED` e `COOLING_DOWN`. Permite ordenar por gravidade, tempo de espera e proximidade com infraestruturas críticas.
 
+#### RF09 – Mancha Térmica Dinâmica (Heatmap por Categoria)
+* **Funcionalidades:** Alternância na interface entre a camada de marcadores pontuais (pins) e a camada de mancha térmica contínua (heatmap).
+* **Parâmetros Dinâmicos:**
+  * O usuário seleciona a categoria ativa (ex: `FLOODING_CLIMATE`, `CRIME_VIOLENT`, `TRAFFIC_COLLISION`).
+  * A mancha térmica aplica pesos proporcionais à severidade de cada incidente e ao decaimento temporal ($w = \text{severity\_weight} \times e^{-\lambda \Delta t}$).
+  * O gradiente cromático varia suavemente de azul/verde (baixa densidade de risco) para amarelo, laranja e vermelho escuro (alta concentração de risco).
+
+#### RF10 – Camada Territorial de Áreas Conflagradas / Dominadas
+* **Funcionalidades:** Sobreposição cartográfica de polígonos delimitadores de territórios sob influência de grupos armados (facções criminosas e milícias) no Rio de Janeiro e Baixada Fluminense.
+* **Comportamento Visual e Interativo:**
+  * Renderização de polígonos com preenchimento semitransparente e bordas distintas com codificação visual padrão (ex.: CV em vermelho, TCP em verde/azul, ADA em amarelo/laranja, Milícia em cinza escuro/preto, Disputa em hachurado).
+  * Interação via clique/hover: exibição de balão informativo com nome da localidade/complexo, facção dominante registrada, nível de risco e data da última consolidação da inteligência geográfica.
+  * Integração como barreira ou penalidade no cálculo de intersecção de rotas (RF05).
+
+#### RF11 – Módulo de Ingestão de Dados Cartográficos Vetoriais (XML/KML/GeoJSON)
+* **Funcionalidades:** Endpoint e ferramenta administrativa CLI/Web restrita a `OPERATOR` e `MANAGER` para upload e processamento em lote de bases abertas de polígonos (arquivos `.kml`, `.xml`, `.geojson` ou `.shp` da segurança pública do RJ).
+* **Tratamento de Dados:**
+  * Validação topológica de fechamento de anéis (`ST_IsValid`).
+  * Conversão automática de coordenadas de origem para `EPSG:4326` (WGS84).
+  * Simplificação de vértices via algoritmo Douglas-Peucker (`ST_SimplifyPreserveTopology`) para performance de renderização.
+
 ---
 
-## 3. Requisitos Não-Funcionais Detalhados & Mecanismos de Garantia
+## 4. Requisitos Não-Funcionais Detalhados & Mecanismos de Garantia
 
 ### RNF01 – Latência em Consultas Espaciais ($\le 1,5\text{s}$)
 * **Mecanismo:** Uso de índices `GiST` em PostGIS. Restrição de bounding box no SQL (`ST_MakeEnvelope`) para não carregar o mapa inteiro em memória. Caching HTTP com cabeçalhos `ETag` e `Cache-Control: public, max-age=15` para mapas de calor e marcadores agregados.
@@ -143,9 +194,18 @@ Abaixo, cada requisito levantado na fase de ideação de Produto é decomposto t
 ### RNF08 – Autenticação Multifator (MFA) Mandatória para Gestores
 * **Mecanismo:** Implementação do padrão **TOTP (Time-Based One-Time Password - RFC 6238)**. O Gestor escaneia um QRCode durante o primeiro acesso para vincular um aplicativo autenticador (Google Authenticator, Microsoft Authenticator, 1Password). O login só é completado após validação do código de 6 dígitos.
 
+### RNF09 – Renderização GPU/WebGL de Heatmap e Alternância Imediata ($\le 250\text{ms}$)
+* **Mecanismo:** A interpolação da mancha térmica deve ser executada inteiramente na GPU através de shaders da camada `heatmap` do MapLibre GL. A alternância entre a visão de pins e a visão térmica deve ocorrer em menos de 250ms sem congelamento da thread principal (Zero UI Freeze).
+
+### RNF10 – Indexação e Simplificação Espacial de Polígonos Complexos
+* **Mecanismo:** Polígonos de comunidades e favelas contendo milhares de vértices devem ser armazenados com índices espaciais `GiST` e versões simplificadas pré-computadas (`ST_SimplifyPreserveTopology(geom, 0.0001)`). Consultas de contenção (`ST_Contains`, `ST_Intersects`) devem responder em menos de $50\text{ms}$.
+
+### RNF11 – Validação $O(1)$ de Limites Metropolitanos (Bounding Box)
+* **Mecanismo:** Checagem de coordenadas geográficas na camada de borda/API em tempo constante $O(1)$ comparando latitude e longitude contra as constantes do Bounding Box da RMRJ antes de acionar a camada de banco de dados.
+
 ---
 
-## 4. Matriz de Rastreabilidade de Engenharia
+## 5. Matriz de Rastreabilidade de Engenharia
 
 | Requisito | Camada Backend | Camada Banco de Dados | Camada Frontend | Mecanismo de Teste / Harness |
 | :--- | :--- | :--- | :--- | :--- |
@@ -157,3 +217,7 @@ Abaixo, cada requisito levantado na fase de ideação de Produto é decomposto t
 | **RF06** | Spring Security `@PreAuthorize` | `users`, `roles`, `user_roles` | Guarda de rotas / RBAC UI | Teste de segurança HTTP 401/403 |
 | **RF07** | `AdminUserController` | `users` com flags de status | Painel administrativo | Teste de fluxo de inativação |
 | **RF08** | `ModerationQueueService` | View / Índice por status/severidade | Fila de atendimento Kanban | Teste de concorrência de moderação |
+| **RF09** | `HeatmapDataService` (pesos + decaimento) | Query agregada ponderada | Camada `heatmap` WebGL | Teste de cálculo de peso térmico |
+| **RF10** | `TerritoryZoneController` | `territory_zones` (`MultiPolygon`) | Camada poligonal colorida | Teste de consulta e serialização GeoJSON |
+| **RF11** | `SpatialIngestionService` (XML/KML) | `ST_GeomFromKML`, `ST_Simplify` | Upload administrativo de arquivo | Teste de ingestão e validação topológica |
+
