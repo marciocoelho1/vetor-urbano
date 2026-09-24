@@ -1,0 +1,30 @@
+@import 'bootstrap/scss/bootstrap';
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;700&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap');
+
+:root {
+    --color-bg-base: #09090b;
+    --color-bg-surface: #18181b;
+    --color-border-subtle: #27272a;
+
+    --color-alert-critical: #ef4444;
+    --color-alert-warning: #f59e0b;
+    --color-alert-safe: #10b981;
+
+    --color-text-main: #f4f4f5;
+    --color-text-muted: #a1a1aa;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background-color: var(--color-bg-base);
+    font-family: 'Geist', sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6, .brand-font {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    letter-spacing: -0.02em;
+}

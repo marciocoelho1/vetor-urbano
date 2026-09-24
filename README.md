@@ -1,6 +1,6 @@
 # Vetor Urbano - Plataforma de Resiliência Urbana e Geomonitoramento de Incidentes
 
-> **Status do Projeto:** `v0.1.0-alpha` (Inception Arquitetural & Engenharia de Requisitos)  
+> **Status do Projeto:** `v0.3.0-alpha` (Estruturação do Frontend Web e Design System em Andamento)  
 > **Modelo de Engenharia:** Full-Cycle Development com IA Pareada (Pair Programming Assistido)  
 > **Licença:** Privada / Portfólio Estratégico de Engenharia de Software  
 
@@ -24,11 +24,11 @@ O projeto une a experiência operacional e de gestão de contingências crítica
 | Versão | Data | Marco / Entregáveis | Status |
 | :--- | :--- | :--- | :--- |
 | **`v0.1.0-alpha`** | 2026-09-24 | Inception do Produto: Definição de escopo PO, revisão crítica de arquitetura (RF01-RF11, RNF01-RNF11, RN-GEO, RN-MT, RN-AD), mitigação de gargalos de escalabilidade e criação do repositório base. | **Concluído** |
-| `v0.2.0-alpha` | A definir | DBA & Modelagem Espacial: Esquema 3NF PostgreSQL + PostGIS, índices espaciais GiST, migrações estruturadas (Flyway) e auditoria. | Planejado |
-| `v0.3.0-alpha` | A definir | UX/UI & Wireframes: Mapeamento de fluxos de telas (Cidadão vs Operador vs Gestor) e contratos de API (OpenAPI 3.1). | Planejado |
+| **`v0.2.0-alpha`** | 2026-09-24 | DBA & Modelagem Espacial: Esquema 3NF PostgreSQL 16 + PostGIS, migração Flyway inicial (`V1__Initial_Schema.sql`), índices espaciais GiST, tipos ENUM e auditoria. | **Concluído** |
+| **`v0.3.0-alpha`** | 2026-09-24 | Frontend & UX/UI Base: Inicialização do SPA Angular 19 (`vetor-urbano-web`), integração com Bootstrap (Dark Mode), Angular CDK, MapLibre GL JS (WebGL / Dark Map) e identidade visual Industrial Brutalism. | **Em Andamento** |
 | `v0.4.0-alpha` | A definir | Core Backend: API RESTful Java 21+ / Spring Boot 3 com Spring Security, Argon2id, JWT/MFA e endpoints espaciais. | Planejado |
 | `v0.5.0-alpha` | A definir | Eventos em Tempo Real: Gateway SSE/WebSockets com Pub/Sub para alertas de risco e geofencing via células H3. | Planejado |
-| `v0.6.0-alpha` | A definir | Frontend Cartográfico: Aplicação Web com MapLibre GL / Vector Tiles e painel operacional de moderação. | Planejado |
+| `v0.6.0-alpha` | A definir | Frontend Cartográfico Avançado: Aplicação Web com MapLibre GL / Vector Tiles e painel operacional de moderação. | Planejado |
 | `v1.0.0-rc` | A definir | Homologação de Produção: Harness automatizado, testes de carga, auditoria OWASP e esteira de CI/CD. | Planejado |
 
 ---
@@ -98,6 +98,25 @@ graph TD
     IncidentService --> Postgres
     IncidentService --> RedisDB
     StreamingService --> RedisDB
+```
+
+### 4.1. Estrutura do Repositório (Monorepo)
+
+O projeto é organizado como um monorepo com módulos desacoplados para backend e frontend:
+
+```text
+Vetor Urbano/
+├── vetor-urbano-api/        # Backend em Java 21 / Spring Boot 3 & Migrações Flyway (PostGIS)
+│   └── src/main/resources/db/migration/
+├── vetor-urbano-web/        # Frontend SPA em Angular 19, MapLibre GL e Bootstrap/CDK
+│   ├── src/app/
+│   ├── angular.json
+│   └── package.json
+├── docs/specs/              # Especificações arquiteturais formais (SPEC-001)
+├── planejamento/            # Relatórios e análises de modelagem e arquitetura
+├── harness/                 # Scripts determinísticos de verificação e qualidade
+├── AGENTS.md                # Diretrizes operacionais e de engenharia para IAs pareadas
+└── README.md                # Documentação executiva e técnica do projeto
 ```
 
 ---
