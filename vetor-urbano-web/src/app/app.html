@@ -1,38 +1,46 @@
-<!--Container principal-->
-<main class="d-flex vh-100 vw-100 overflow-hidden">
+<main class="app-shell">
+  <aside class="sidebar" aria-label="Navegação principal">
+    <a class="brand" href="/" aria-label="Vetor Urbano, página inicial">
+      <span class="brand-mark" aria-hidden="true">VU</span>
+      <span class="brand-name">Vetor <strong>Urbano</strong></span>
+    </a>
 
-  <!--sidebar-->  
-  <aside class="sidebar-container d-flex flex-column p-4">
-    <header class="mb-5">
-      <h2 class="brand-font m-0 fw-bold text-white">VETOR<br>URBANO</h2>
-      <span class="badge bg-danger mt-2">v0.3.0-alpha</span>
-    </header>
+    <div class="sidebar-content">
+      <p class="sidebar-label">Explorar</p>
+      <nav aria-label="Seções">
+        <a class="nav-link nav-link-active" href="#mapa" aria-current="page">
+          <span class="nav-indicator" aria-hidden="true"></span>
+          Mapa público
+        </a>
+      </nav>
+    </div>
 
-    <!--navegação-->  
-    <nav class="flex-grow-1">
-      <p class="text-uppercase text-secondary small fw-bold mb-3" style="letter-spacing: 1px;">Operações</p>
-      <div class="list-group list-group-flush bg-transparent">
-        <button type="button" class="list-group-item list-group-item-action bg-transparent text-white border-0 px-0 fw-medium">
-          Mapa ao Vivo
-        </button>
-        <button type="button" class="list-group-item list-group-item-action bg-transparent text-secondary border-0 px-0 fw-medium">
-          Fila de Moderação
-        </button>
-      </div>
-    </nav>
-
-    <!--rodapé-->
-    <footer class="mt-auto pt-3 border-top border-secondary border-opacity-25">
-      <div class="d-flex align-items-center">
-        <div class="rounded-circle bg-secondary me-2" style="width: 32px; height: 32px;"></div>
-        <small class="text-light fw-medium">Operador Rio</small>
-      </div>
+    <footer class="sidebar-footer">
+      <span>Base pública compartilhada</span>
     </footer>
   </aside>
 
-  <!--mapa-->
-  <section class="flex-grow-1 position-relative">
-    <div id="map" class="w-100 h-100"></div>
-  </section>
+  <section class="map-workspace" id="mapa" aria-labelledby="map-heading">
+    <header class="map-header">
+      <div>
+        <p class="eyebrow">Região Metropolitana do Rio de Janeiro</p>
+        <h1 id="map-heading">Mapa público</h1>
+      </div>
+      <span class="map-context">Mapa-base</span>
+    </header>
 
+    <div class="map-frame">
+      <div id="map" class="map-canvas" role="application" aria-label="Mapa interativo da Região Metropolitana do Rio de Janeiro"></div>
+
+      @if (mapLoading()) {
+        <div class="map-message" role="status">Carregando mapa…</div>
+      } @else if (mapError()) {
+        <div class="map-message map-message-error" role="alert">
+          Não foi possível carregar o mapa. Verifique sua conexão e tente novamente.
+        </div>
+      }
+
+      <p class="map-caption">A visualização de ocorrências públicas será disponibilizada nesta área.</p>
+    </div>
+  </section>
 </main>
