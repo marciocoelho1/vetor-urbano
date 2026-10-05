@@ -1,0 +1,24 @@
+# Local secrets and environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Generated dependencies and builds
+node_modules/
+dist/
+target/
+.angular/cache/
+coverage/
+
+# Hermes working data (project skills remain versioned)
+.hermes/cache/
+.hermes/plans/
+
+# Editor and operating-system noise
+.DS_Store
+Thumbs.db
+*.log

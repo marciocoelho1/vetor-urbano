@@ -1,0 +1,154 @@
+# Arquitetura — hipótese inicial, não implementada
+
+Revisão: 26/09/2026. Stack fornecida: **Angular + SCSS, Java, PostgreSQL**. Todo acréscimo técnico abaixo está **proposto / a validar**, não aprovado. Não foram gerados manifests, aplicações, migrações ou infraestrutura. Nenhum ADR novo: ainda não houve decisão arquitetural aprovada nesta rodada.
+
+## 1. Evidência atual e fluxo pretendido
+
+Existem documentos, `harness.sh` e três referências de UI. Não existem `frontend/package.json`, componente TypeScript, `backend/pom.xml`, Maven Wrapper ou schema de banco. A sintaxe Angular `@if`, `mapLoading()` e `mapError()` no HTML não constitui aplicação executável. Análise visual foi estática, sem renderização ou medição de contraste/desempenho.
+
+Fluxo proposto P1.1:
+
+```text
+Carga local de demonstração (sem endpoint de escrita)
+    → PostgreSQL + PostGIS: ocorrência sintética aprovada
+    → repositório de consulta → serviço → controlador HTTP / DTO público
+    → Angular: cliente HTTP → estado da consulta → mapa MapLibre + lista
+```
+
+Falha de tiles/WebGL não deve apagar uma lista recebida pela API. O navegador não se conecta diretamente ao banco; a API decide quais campos e estados são públicos. Implantação inicial apenas local, sem compromisso de disponibilidade operacional.
+
+## 2. Componentes, alternativas e consequências
+
+| Proposta | Problema que resolve | Alternativa principal / consequência |
+|---|---|---|
+| Spring Boot, um serviço | Agrupar HTTP, validação, configuração e posterior segurança na stack Java solicitada | Java com configuração manual aumenta trabalho inicial; microserviços multiplicam implantação/contratos sem necessidade demonstrada. |
+| Pacotes por funcionalidade (`ocorrencias`; identidade/moderação somente depois) | Manter regra, transporte e persistência próximos, com fronteiras legíveis | Camadas globais podem dispersar uma mudança; não criar framework interno, CQRS, event bus ou interfaces sem uso concreto. |
+| PostgreSQL + PostGIS | Tipos e consultas espaciais para o raio previsto | Apenas latitude/longitude e cálculo manual exigiriam resolver distância/índice por conta própria. Proposta: `geography(Point,4326)` com GiST; `ST_DWithin` em geography recebe metros e aproveita filtro por índice.[5] |
+| Migrações versionadas com Flyway | Banco reproduzível e evolução rastreável | SQL manual solto perde histórico de aplicação. Nunca editar migração já aplicada; gerar nova. Seed demonstrativo separado e restrito ao ambiente de demonstração. |
+| API HTTP JSON, contrato documentado | Fronteira explícita entre Angular e Java; testes independentes | OpenAPI em arquivo no incremento, sem biblioteca de geração automática obrigatória; mocks só nos testes, não como entrega integrada. |
+| MapLibre e Bootstrap/SCSS da referência | Preservar identidade e o mapa como foco | Não trocar renderizador/tema sem problema demonstrado. O estilo MapLibre aponta fontes e recursos: escolher renderizador não fornece automaticamente tiles, licença ou hospedagem.[11] |
+| SQL explícito com suporte JDBC do Spring para consulta espacial | Deixar filtros/projeção pública visíveis e estudáveis | JPA é alternativa válida, mas acrescentaria mapeamento espacial sem necessidade neste primeiro endpoint; validar escolha no início de P1.1. |
+| npm com lockfile; Maven Wrapper | Registrar resoluções de dependências e execução do build | Versões flutuantes dificultam reproduzir evidências. Wrapper/lockfile ainda não existem; não alegar instalação concluída. |
+| Testcontainers com PostgreSQL/PostGIS; Docker no desenvolvimento/teste | Exercitar o mesmo mecanismo espacial, isolado e repetível | H2 não comprova comportamento PostGIS. Docker é requisito do harness atual, não decisão de deploy nem motivo para adicionar Kubernetes. |
+
+Sem Redis, broker, SSE, WebSockets, microsserviços ou cluster em P1.1. Escolher uma dependência implica documentar licença, versão e manutenção antes de incorporá-la; tabela não é lista de pacotes já instalados.
+
+## 3. Versões e compatibilidade — gate antes de gerar projetos
+
+**Nenhuma versão exata foi fixada nesta Fase 0.** A documentação oficial foi consultada para orientar o gate, mas não foram executados builds de compatibilidade.
+
+| Componente | Proposta / estado |
+|---|---|
+| Angular + Angular CLI, Node.js, TypeScript, RxJS | Selecionar uma linha suportada e fixar patches; verificar a combinação na matriz oficial. Não escolher Node/TypeScript independentemente do Angular.[6] |
+| Java + Spring Boot | Java 21 como candidato de estudo, não instalação constatada. A página consultada de Spring Boot 4.1.1 aceita Java de 17 a 26; isso inclui o candidato, mas não congela a versão do projeto.[7] |
+| Maven / Wrapper | Fixar distribuição e conferir a exigência do Boot escolhido; página consultada de Boot 4.1.1 exige Maven 3.6.3 ou superior.[7] |
+| PostgreSQL + PostGIS | Versões/patches e imagem ainda a selecionar; verificar suporte conjunto, extensão disponível e registrar tag/digest. Não usar `latest`. |
+| MapLibre, Bootstrap, Sass, Flyway, drivers e testes | Versões não confirmadas; validar integração, suporte PostgreSQL/PostGIS e ferramentas geradas antes de aceitar manifests. |
+
+Antes do scaffold: inventariar runtimes instalados e Docker (sem instalar ou alterar o sistema sem necessidade/escopo), consultar matrizes vigentes, registrar a combinação exata neste documento, então gerar e executar build/testes. Documentação de compatibilidade não substitui execução. Consulta realizada em 26/09/2026; revalidar ao iniciar P1.1.
+
+## 4. Modelo conceitual mínimo
+
+Entidade proposta **Ocorrencia** em P1.1:
+
+| Campo conceitual | Representação candidata | Regra |
+|---|---|---|
+| id | UUID, chave primária | Identifica a ocorrência, não pessoa/dispositivo |
+| categoria | Código textual restrito | FURTO, TIROTEIO, COLISAO_VIARIA ou ALAGAMENTO; catálogo a validar |
+| severidade | Código textual restrito | BAIXA, MODERADA, ALTA ou CRITICA; rubrica pendente |
+| ocorrido_em | `timestamptz` / `Instant` | Instante do evento; entrada com offset, saída UTC |
+| localizacao_publica | `geography(Point,4326)` | Ponto público da ocorrência; índice GiST para P1.3 |
+| status_moderacao | Código textual restrito | PENDENTE, APROVADA, REJEITADA, RETIRADA; transições RN-P03 |
+| origem | Código textual restrito | Somente SINTETICA em P1 |
+| criado_em | `timestamptz` / `Instant` | Metadado interno, distinto do instante do evento |
+
+As restrições incluem NOT NULL e domínios válidos; validar também coordenadas antes de construir o ponto. **Não haverá coluna autor_id/telefone/endereço do denunciante nesta entidade.** Não duplicar categoria e severidade como um único “nível de risco”.
+
+`Conta`, `Sessao` e `RegistroModeracao` são conceitos de P2, **não tabelas a criar antecipadamente**. Auditoria futura identifica o responsável pela moderação, com acesso restrito; não reintroduz autoria da denúncia criminal. Dados de conta ficam separados. Armazenar uma ligação reversível ainda permitiria reidentificação; a política RNF02 exige revisão do fluxo completo, incluindo logs e backups.
+
+Qualquer localização sensível futura precisa de finalidade e política próprias; não copiar coordenadas precisas para um DTO público só porque o nome foi removido. Se a posição pública for generalizada, os filtros operam sobre ela e a interface informa a precisão. P1 só possui pontos sintéticos, sem localização de residência ou de denunciante.
+
+GeoJSON utiliza ordem longitude/latitude no sistema WGS 84; a proposta de SRID 4326 e Point mantém essa convenção.[13] Para raio, usar `ST_DWithin` sobre geography: um valor em metros não deve ser comparado diretamente com graus de geometry 4326.[5] `timestamptz` representa o instante internamente em UTC e não preserva o nome do fuso de origem; por isso America/Sao_Paulo é convenção explícita de apresentação, não inferida da coluna.[14]
+
+## 5. Contrato preliminar P1.1 — somente leitura
+
+**Proposta:** `GET /api/v1/ocorrencias`, sem autenticação no ambiente local de demonstração. Resposta `200`, `Content-Type: application/geo+json`. Seleção no backend: APROVADA + SINTETICA. Nenhum parâmetro permite trocar esse predicado.
+
+Exemplo inteiramente fictício do contrato (não resposta executada):
+
+```json
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "00000000-0000-4000-8000-000000000001",
+      "geometry": {"type": "Point", "coordinates": [-43.2094, -22.9035]},
+      "properties": {
+        "categoria": "ALAGAMENTO",
+        "severidade": "MODERADA",
+        "ocorridoEm": "2026-09-26T12:00:00Z",
+        "demonstracao": true
+      }
+    }
+  ],
+  "metadata": {"demonstracao": true, "limite": 200, "retornados": 1, "truncado": false}
+}
+```
+
+- `features` é a única fonte de mapa/lista; `id` está em Feature, não duplicado em properties. `metadata` é extensão da aplicação (GeoJSON admite membros adicionais).[13]
+- Ordenação determinística: ocorrido_em decrescente e id crescente. Limite fixo de 200; buscar um registro adicional para determinar `truncado`, mas retornar só até o limite. `retornados` conta o array retornado, não o total do banco.
+- Sem paginação em P1.1: ao truncar, mostrar “exibição parcial”; nunca apresentar contagem como total territorial. Paginação/estratégia para conjuntos maiores será decidida com P1.2, sem deixar API ilimitada provisoriamente.
+- Sem resultados: `200`, `features: []`, `retornados: 0`, `truncado: false`; não é erro. Metadados de demonstração permanecem.
+- P1.1 não aceita parâmetros de consulta: desconhecidos retornam `400`. Em especial, não aceitar filtro público que permita consultar estados privados.
+- Erros JSON com campos estáveis `codigo`, `mensagem`, `correlacaoId` (sem dados pessoais): `400 CONSULTA_INVALIDA`, `503 SERVICO_INDISPONIVEL` quando o banco não responder; `500 ERRO_INTERNO` para falha inesperada. Não devolver SQL, stack trace ou segredo. Mensagem visual não usa HTML vindo do servidor.
+- Escrita não existe: POST/PUT/PATCH/DELETE não são mapeados para criação; testar que não alteram persistência. Não confundir ausência de rota com autorização implementada para P2.
+- Sem descrições livres, autor, telefone, posição do informante ou motivo de moderação. DTO/consulta têm lista permitida de campos; não serializar a entidade inteira.
+
+**Futuro contrato P1.2/P1.3, ainda não aceito em P1.1:** parâmetros candidatos `categoria`, `inicio`, `fim`, `longitude`, `latitude`, `raioMetros`. Período requer ambos os limites; trio espacial é indivisível; categoria desconhecida, offset ausente, intervalo invertido, não finitos e raio fora de `(0,5000]` recebem `400`. Centro não é rastreamento da pessoa. Regras canônicas: RN-P08–RN-P11 em `escopo.md`; detalhar somente quando autorizar esses incrementos.
+
+## 6. Sessões e autorização futuras — sem escolher JWT por reflexo
+
+RNF07 pede tokens, inatividade máxima de uma hora e revogação imediata. Um identificador opaco e imprevisível de sessão também é um token; não é obrigatório que seja JWT. Proposta para P2: sessão persistida do lado servidor, token em cookie Secure/HttpOnly/SameSite, HTTPS em ambiente publicado e defesa CSRF nas escritas. OWASP recomenda expiração de inatividade controlada pelo servidor e invalidação no servidor ao encerrar a sessão.[4]
+
+| Alternativa | Inatividade/revogação | Consequência para este projeto |
+|---|---|---|
+| Token opaco + estado no servidor | Consultar conta/sessão/permissões a cada requisição protegida; guardar último acesso elegível, expiração e revogação | Recomendada para um serviço: revogação vale já na próxima verificação. Usa persistência e pode integrar Spring Session JDBC; biblioteca ainda a validar. |
+| JWT autocontido sem consulta central | `exp` limita validade absoluta, não verifica sozinho inatividade ou revogação anterior à expiração | Não atende sozinho o RNF07. OWASP descreve denylist quando o término da sessão antecede a validade do JWT.[12] |
+| JWT + refresh token + registro de sessão/denylist | Precisa de estado e verificação para revogar imediatamente também access tokens já emitidos | Possível, mas traz rotação, armazenamento e mais casos de erro; refresh revogado sozinho não invalida access token ainda aceito. Não recomendado sem cliente/cenário que o justifique.[12] |
+
+“Imediata” será testada como: após confirmar revogação/inativação, **a próxima requisição protegida é negada**, sem cache de permissão obsoleto. Requisição já concluída não pode ser desfeita. Inatividade conta requisições elegíveis verificadas no servidor; polling automático não renova sessão; limite exato e limite absoluto deverão ser documentados em P2.
+
+Antes de liberar escrita: testes de 401/403, matriz de perfis, inatividade no limite de 60 minutos, revogação, inativação e redução de permissão; hashing com salt/custo validado; MFA obrigatório para Gestor, inclusive prevenção de acesso direto à API antes do segundo fator. MFA/recuperação não serão substituídos por conta administrativa pública provisória. Não gravar tokens/senhas em logs. CORS restrito e HTTPS não substituem autorização.
+
+## 7. Interface: preservar, corrigir e verificar
+
+Evidência local: `app.html:1–46`, `app.scss:1–298`, `styles.scss:1–52` em `docs/referencias/ui/`.
+
+- **Preservar:** marca, tema escuro/tokens, sidebar de 256 px no desktop, mapa em destaque, Bootstrap, CSS MapLibre, foco visível e breakpoints de 760/420 px. Não adicionar biblioteca de tema ou redesenhar navegação.
+- **Completude:** aviso de demonstração, legenda com texto, lista e estados independentes da consulta e do mapa. Carregamento/erro já aparecem no template, mas funções e comportamento não foram fornecidos.
+- **Acessibilidade:** reavaliar `role="application"`; preferir região rotulada e alternativa em lista, link para pular mapa, foco previsível, anúncio de estado e botões rotulados. Testar teclado, leitor de tela e contraste; cor isolada não define severidade. Sem afirmar certificação por inspeção de CSS.
+- **Mobile:** testar alturas mínimas de 360/420/380 px, áreas de rolagem e tela em paisagem, zoom de 200%, controles/legenda/atribuição sem sobreposição; não interpretar media queries como teste já passado.
+- **Manutenção:** substituir novos usos de `::ng-deep` por estilos globais delimitados por classe da área do mapa; Angular desaconselha novos usos desse seletor.[10] Preservar as referências e aplicar ajustes apenas no futuro código.
+- **Dependências visuais:** revisar importação de Bootstrap/Sass conforme as versões escolhidas, sem reduzir/trocar biblioteca antecipadamente; prefixar estilos próprios para evitar colisões como `.nav-link`.
+- **Fontes e mapa-base:** `styles.scss` referencia fontes Google, mas não define provedor de tiles. Avaliar licença, auto-hospedagem/fallback de fontes e exposição de requisições a terceiros. Registrar provedor/estilo, atribuição, limites, custo e indisponibilidade antes de P1.1. Não presumir uso ilimitado de serviço público. Uma opção local/sintética pode evitar dependência externa, sem alegar cartografia real.
+
+## 8. Verificação e limites conhecidos
+
+P1.1 exige testes de serialização/privacidade, domínio/validação, integração HTTP + PostgreSQL/PostGIS e componentes Angular. Teste de integração verifica extensão e dados reais no banco do teste; mocks não substituem CA01. Cenários de estados não públicos ficam em fixtures de teste, sem dados pessoais.
+
+`harness.sh frontend`: exige manifest/lockfile/node_modules e scripts reais lint/test:ci/build; configurar teste de execução única com falha por ausência de testes. `backend`: exige Java, Docker, Wrapper e executa Maven clean verify com flags para não pular testes; exige XML Surefire e Failsafe. Configurar Failsafe ligado a integration-test/verify. Presença de relatórios não comprova que não estejam todos ignorados: revisar contagem, skips e cobertura dos aceites. `all` combina os modos, mas não roda automaticamente um ensaio de carga, E2E ou auditoria de acessibilidade.
+
+P0 executa apenas `docs`/`planning`, verificações estruturais: arquivos não vazios e sintaxe Bash. Detalhamento da única próxima tarefa, dependências e evidências estão em `PLAN.md`.
+
+## Sources
+
+[4] https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
+[5] https://postgis.net/docs/ST_DWithin.html
+[6] https://angular.dev/reference/versions
+[7] https://docs.spring.io/spring-boot/system-requirements.html
+[10] https://angular.dev/guide/components/styling
+[11] https://maplibre.org/maplibre-style-spec
+[12] https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
+[13] https://www.rfc-editor.org/info/rfc7946
+[14] https://www.postgresql.org/docs/current/datatype-datetime.html

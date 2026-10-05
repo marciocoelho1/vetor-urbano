@@ -1,0 +1,46 @@
+<main class="app-shell">
+  <aside class="sidebar" aria-label="Navegação principal">
+    <a class="brand" href="/" aria-label="Vetor Urbano, página inicial">
+      <span class="brand-mark" aria-hidden="true">VU</span>
+      <span class="brand-name">Vetor <strong>Urbano</strong></span>
+    </a>
+
+    <div class="sidebar-content">
+      <p class="sidebar-label">Explorar</p>
+      <nav aria-label="Seções">
+        <a class="nav-link nav-link-active" href="#mapa" aria-current="page">
+          <span class="nav-indicator" aria-hidden="true"></span>
+          Mapa público
+        </a>
+      </nav>
+    </div>
+
+    <footer class="sidebar-footer">
+      <span>Base pública compartilhada</span>
+    </footer>
+  </aside>
+
+  <section class="map-workspace" id="mapa" aria-labelledby="map-heading">
+    <header class="map-header">
+      <div>
+        <p class="eyebrow">Região Metropolitana do Rio de Janeiro</p>
+        <h1 id="map-heading">Mapa público</h1>
+      </div>
+      <span class="map-context">Mapa-base</span>
+    </header>
+
+    <div class="map-frame">
+      <div id="map" class="map-canvas" role="application" aria-label="Mapa interativo da Região Metropolitana do Rio de Janeiro"></div>
+
+      @if (mapLoading()) {
+        <div class="map-message" role="status">Carregando mapa…</div>
+      } @else if (mapError()) {
+        <div class="map-message map-message-error" role="alert">
+          Não foi possível carregar o mapa. Verifique sua conexão e tente novamente.
+        </div>
+      }
+
+      <p class="map-caption">A visualização de ocorrências públicas será disponibilizada nesta área.</p>
+    </div>
+  </section>
+</main>

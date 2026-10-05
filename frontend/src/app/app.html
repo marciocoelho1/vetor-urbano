@@ -1,0 +1,685 @@
+<a class="skip-link" href="#main-content">Ir para o conteúdo</a>
+<div class="app-shell">
+  <aside class="sidebar" aria-label="Navegação principal">
+    <a
+      class="brand"
+      href="#mapa"
+      (click)="openView('map')"
+      aria-label="Vetor Urbano — mapa público"
+    >
+      <span class="brand-mark" aria-hidden="true">VU</span>
+      <span class="brand-name">Vetor <strong>Urbano</strong></span>
+    </a>
+
+    <div class="sidebar-section">
+      <p class="side-label">Explorar</p>
+      <nav class="primary-nav" aria-label="Seções do Vetor Urbano">
+        <button
+          class="nav-link"
+          [class.is-active]="activeView() === 'map'"
+          (click)="openView('map')"
+          [attr.aria-current]="activeView() === 'map' ? 'page' : null"
+        >
+          <span class="nav-symbol" aria-hidden="true">⌖</span>Mapa público
+        </button>
+        <button
+          class="nav-link"
+          [class.is-active]="activeView() === 'report'"
+          (click)="openView('report')"
+          [attr.aria-current]="activeView() === 'report' ? 'page' : null"
+        >
+          <span class="nav-symbol" aria-hidden="true">＋</span>Registrar ocorrência
+        </button>
+      </nav>
+    </div>
+
+    <div class="sidebar-foot">
+      <span class="status-light" aria-hidden="true"></span>
+      <span>Ambiente demonstrativo</span>
+    </div>
+  </aside>
+
+  <main id="main-content" class="main-content">
+    <div class="demo-ribbon" role="note">
+      <span class="demo-dot" aria-hidden="true"></span>
+      <strong>DEMONSTRAÇÃO</strong>
+      <span>Dados fictícios — não usar para decisões de segurança.</span>
+    </div>
+
+    <section [hidden]="activeView() !== 'map'" aria-label="Mapa público">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Rio de Janeiro · consulta pública</p>
+          <h1>Mapa de ocorrências</h1>
+          <p class="page-intro">
+            Explore informações demonstrativas por categoria, período e contexto.
+          </p>
+        </div>
+        <button
+          class="heatmap-button"
+          [class.is-on]="heatmap()"
+          (click)="toggleHeatmap()"
+          [attr.aria-pressed]="heatmap()"
+        >
+          <span class="heat-icon" aria-hidden="true">◌</span
+          >{{ heatmap() ? 'Ver marcadores' : 'Ver mancha térmica' }}
+        </button>
+      </header>
+
+      <div class="map-layout">
+        <aside class="filter-panel" aria-label="Filtros do mapa">
+          <div class="filter-heading">
+            <div>
+              <span class="eyebrow">Camadas</span>
+              <h2>Explore por tema</h2>
+            </div>
+            <span class="filter-count" aria-label="camadas ativas">{{
+              activeFilters().length
+            }}</span>
+          </div>
+
+          <section class="module-block">
+            <button
+              class="module-toggle"
+              data-module="intelligence"
+              [attr.aria-expanded]="expandedModule() === 'intelligence'"
+              aria-controls="module-intelligence"
+              (click)="toggleModule('intelligence')"
+            >
+              <span class="module-glyph glyph-analysis" aria-hidden="true">⌁</span
+              ><span class="module-title">Análise e Inteligência</span
+              ><span class="chevron" aria-hidden="true">⌄</span>
+            </button>
+            @if (expandedModule() === 'intelligence') {
+              <div class="module-content" id="module-intelligence">
+                <fieldset class="filter-group period-group">
+                  <legend>Período do fato</legend>
+                  <div class="period-options">
+                    @for (
+                      option of [
+                        { id: '1w', label: '1 sem.' },
+                        { id: '1m', label: '1 mês' },
+                        { id: '3m', label: '3 meses' },
+                        { id: '6m', label: '6 meses' },
+                        { id: '1y', label: '1 ano' },
+                      ];
+                      track option.id
+                    ) {
+                      <label class="period-option"
+                        ><input
+                          type="radio"
+                          name="period"
+                          [value]="option.id"
+                          [checked]="period() === option.id"
+                          [attr.data-filter]="'period-' + option.id"
+                          (change)="selectPeriod(option.id)"
+                        /><span>{{ option.label }}</span></label
+                      >
+                    }
+                  </div>
+                </fieldset>
+                <fieldset class="filter-group">
+                  <legend>Tipos de ocorrência</legend>
+                  @for (
+                    option of [
+                      { id: 'CRIMES', label: 'Crimes' },
+                      { id: 'CALAMIDADE_PUBLICA', label: 'Calamidade pública' },
+                      { id: 'ASSUNTOS_SEGURANCA', label: 'Assuntos diversos de segurança' },
+                      { id: 'ATIVIDADE_POLICIAL', label: 'Atividade policial' },
+                      { id: 'ORDEM_PUBLICA', label: 'Ordem pública' },
+                      { id: 'ALERTA', label: 'Alerta' },
+                      { id: 'OUTROS_REGISTROS', label: 'Outros registros' },
+                    ];
+                    track option.id
+                  ) {
+                    <label class="filter-choice"
+                      ><input
+                        type="checkbox"
+                        [checked]="isFilterActive('group:' + option.id)"
+                        (change)="toggleFilter('group:' + option.id)"
+                      /><span>{{ option.label }}</span></label
+                    >
+                  }
+                  <details class="advanced-filter">
+                    <summary>Opções avançadas <span aria-hidden="true">＋</span></summary>
+                    <div class="advanced-options">
+                      @for (
+                        crime of [
+                          { id: 'FURTO', label: 'Furto' },
+                          { id: 'ROUBO_TRANSEUNTE', label: 'Roubo a transeunte' },
+                          { id: 'ESTELIONATO', label: 'Estelionato' },
+                          { id: 'AMEACA', label: 'Ameaça' },
+                          { id: 'LESAO_CORPORAL_DOLOSA', label: 'Lesão corporal dolosa' },
+                          { id: 'ROUBO_VEICULO', label: 'Roubo de veículo' },
+                          { id: 'FURTO_VEICULO', label: 'Furto de veículo' },
+                          { id: 'ROUBO_COLETIVO', label: 'Roubo em transporte coletivo' },
+                          { id: 'ROUBO_CARGA', label: 'Roubo de carga' },
+                          { id: 'HOMICIDIO_DOLOSO', label: 'Homicídio doloso' },
+                        ];
+                        track crime.id
+                      ) {
+                        <label class="filter-choice"
+                          ><input
+                            type="checkbox"
+                            [checked]="isFilterActive('crime:' + crime.id)"
+                            (change)="toggleFilter('crime:' + crime.id)"
+                          /><span>{{ crime.label }}</span></label
+                        >
+                      }
+                    </div>
+                  </details>
+                </fieldset>
+                <fieldset class="filter-group">
+                  <legend>Análise de alertas</legend>
+                  @for (category of categories; track category.id) {
+                    <label class="filter-choice"
+                      ><input
+                        type="checkbox"
+                        [checked]="isFilterActive('category:' + category.id)"
+                        (change)="toggleFilter('category:' + category.id)"
+                      /><span>{{ category.label }}</span></label
+                    >
+                  }
+                </fieldset>
+                <p class="filter-hint">
+                  As camadas se somam. O período filtra a data do fato, não a data de inclusão.
+                </p>
+              </div>
+            }
+          </section>
+
+          <section class="module-block">
+            <button
+              class="module-toggle"
+              data-module="information"
+              [attr.aria-expanded]="expandedModule() === 'information'"
+              aria-controls="module-information"
+              (click)="toggleModule('information')"
+            >
+              <span class="module-glyph glyph-info" aria-hidden="true">⌖</span
+              ><span class="module-title">Informações</span
+              ><span class="chevron" aria-hidden="true">⌄</span>
+            </button>
+            @if (expandedModule() === 'information') {
+              <div class="module-content" id="module-information">
+                <fieldset class="filter-group">
+                  <legend>Pontos de interesse coletivos</legend>
+                  @for (
+                    poi of [
+                      { id: 'HOSPITAL_PUBLICO', label: 'Hospitais públicos' },
+                      { id: 'HOSPITAL_PARTICULAR', label: 'Hospitais particulares' },
+                      { id: 'UPA', label: 'UPAs' },
+                      { id: 'AEROPORTO', label: 'Aeroportos' },
+                      { id: 'EMBAIXADA_CONSULADO', label: 'Embaixadas e consulados' },
+                      { id: 'ESTADIO', label: 'Estádios' },
+                    ];
+                    track poi.id
+                  ) {
+                    <label class="filter-choice"
+                      ><input
+                        type="checkbox"
+                        [attr.data-filter]="'poi:' + poi.id"
+                        [checked]="isFilterActive('poi:' + poi.id)"
+                        (change)="toggleFilter('poi:' + poi.id)"
+                      /><span>{{ poi.label }}</span></label
+                    >
+                  }
+                </fieldset>
+                <fieldset class="filter-group">
+                  <legend>Pontos exclusivos</legend>
+                  <label class="filter-choice"
+                    ><input
+                      type="checkbox"
+                      [checked]="isFilterActive('poi:EXCLUSIVO')"
+                      (change)="toggleFilter('poi:EXCLUSIVO')"
+                    /><span>Locais do cliente</span></label
+                  >
+                  <p class="filter-hint">
+                    Disponíveis apenas em uma conta autenticada. Nenhum local privado é carregado
+                    nesta demonstração.
+                  </p>
+                </fieldset>
+              </div>
+            }
+          </section>
+
+          <section class="module-block">
+            <button
+              class="module-toggle"
+              data-module="territory"
+              [attr.aria-expanded]="expandedModule() === 'territory'"
+              aria-controls="module-territory"
+              (click)="toggleModule('territory')"
+            >
+              <span class="module-glyph glyph-territory" aria-hidden="true">⬡</span
+              ><span class="module-title">Domínio Territorial</span
+              ><span class="chevron" aria-hidden="true">⌄</span>
+            </button>
+            @if (expandedModule() === 'territory') {
+              <div class="module-content" id="module-territory">
+                <fieldset class="filter-group">
+                  <legend>Áreas territoriais</legend>
+                  @for (
+                    area of [
+                      { id: 'CV', label: 'Comando Vermelho (CV)' },
+                      { id: 'TCP', label: 'Terceiro Comando Puro (TCP)' },
+                      { id: 'ADA', label: 'Amigos dos Amigos (ADA)' },
+                      { id: 'MILICIA', label: 'Milícia' },
+                      { id: 'LIGA_JUSTICA', label: 'Liga da Justiça' },
+                      { id: 'MILICIA_NOVA_IGUACU', label: 'Milícia de Nova Iguaçu' },
+                      { id: 'AREA_NEUTRA', label: 'Área neutra' },
+                    ];
+                    track area.id
+                  ) {
+                    <label class="filter-choice"
+                      ><input
+                        type="checkbox"
+                        [checked]="isFilterActive('territory:' + area.id)"
+                        (change)="toggleFilter('territory:' + area.id)"
+                      /><span>{{ area.label }}</span></label
+                    >
+                  }
+                </fieldset>
+                <p class="source-warning">
+                  <strong>Camada indisponível</strong
+                  ><span
+                    >Fonte territorial em validação. Nenhum polígono será exibido sem proveniência e
+                    licença verificáveis.</span
+                  >
+                </p>
+              </div>
+            }
+          </section>
+        </aside>
+
+        <section class="map-column" aria-label="Mapa e resultados">
+          <div class="map-meta-bar">
+            <div class="result-total">
+              <span class="result-led" aria-hidden="true"></span><strong>{{ eventCount() }}</strong
+              >&nbsp;<span>ocorrências simuladas</span>
+            </div>
+            <span class="map-region">Centro do Rio · visualização demonstrativa</span>
+          </div>
+          <div class="map-frame" [class.heat-active]="heatmap()">
+            <div
+              id="map-canvas"
+              class="map-canvas"
+              aria-label="Mapa interativo do Rio de Janeiro. Os marcadores visíveis são fictícios."
+            ></div>
+            @if (!mapReady() && !mapError()) {
+              <div class="map-loading" role="status">Preparando mapa demonstrativo…</div>
+            }
+            @if (mapError()) {
+              <div class="map-fallback" role="status">
+                <span class="fallback-mark" aria-hidden="true">⌖</span>
+                <strong>Mapa indisponível neste navegador</strong>
+                <span>Os resultados continuam disponíveis na lista abaixo.</span>
+              </div>
+            }
+            @if (territorySelected()) {
+              <div class="map-notice" role="status">
+                <span aria-hidden="true">ⓘ</span>Camada territorial não carregada: fonte em
+                validação.
+              </div>
+            }
+            <div class="map-stamp">
+              <span class="stamp-dot" aria-hidden="true"></span>AMBIENTE DE DEMONSTRAÇÃO
+            </div>
+          </div>
+          <div class="map-legend" aria-label="Legenda do mapa">
+            <span
+              ><i class="legend-dot occurrence-dot" aria-hidden="true"></i>Ocorrência fictícia</span
+            >
+            <span
+              ><i class="legend-dot poi-dot" aria-hidden="true"></i>Ponto de interesse
+              fictício</span
+            >
+            @if (heatmap()) {
+              <span class="legend-note">Densidade de pontos — não representa nível de risco.</span>
+            }
+          </div>
+
+          <section class="results-panel" aria-labelledby="results-heading">
+            <div class="results-heading">
+              <div>
+                <h2 id="results-heading">Resultados visíveis</h2>
+                <p>Os mesmos registros alimentam o mapa e esta lista.</p>
+              </div>
+              <span>{{ visiblePoints().length }} itens</span>
+            </div>
+            @if (visiblePoints().length) {
+              <ul class="result-list">
+                @for (point of visiblePoints(); track point.id) {
+                  <li class="result-item">
+                    <span
+                      class="record-symbol"
+                      [class.poi-symbol]="point.kind === 'poi'"
+                      aria-hidden="true"
+                      >{{ point.kind === 'poi' ? '⌖' : '●' }}</span
+                    >
+                    <div class="record-copy">
+                      <strong>{{ point.name }}</strong
+                      ><span
+                        >{{ point.location }} ·
+                        {{
+                          point.kind === 'poi'
+                            ? 'Ponto de interesse'
+                            : 'Ocorrido às ' + formatTime(point.occurredAt || point.insertedAt)
+                        }}</span
+                      >
+                    </div>
+                    <span class="record-tag">FICTÍCIO</span>
+                  </li>
+                }
+              </ul>
+            } @else {
+              <div class="empty-state">
+                <span aria-hidden="true">⌕</span><strong>Nenhum resultado nesta combinação</strong
+                ><span>Ative uma camada ou amplie o período para explorar a demonstração.</span>
+              </div>
+            }
+          </section>
+        </section>
+      </div>
+    </section>
+    @if (activeView() === 'report') {
+      <header class="page-header report-header">
+        <div>
+          <p class="eyebrow">Contribua com contexto</p>
+          <h1>Cadastro de ocorrências</h1>
+          <p class="page-intro">
+            Primeiro escolha uma categoria. Os campos aparecem conforme o tipo de informação.
+          </p>
+        </div>
+        <span class="account-badge"
+          ><span class="lock-mark" aria-hidden="true">◉</span>Cadastro sujeito à aprovação</span
+        >
+      </header>
+
+      <form class="report-form" (submit)="submitReport($event)">
+        <section class="form-card category-card" aria-labelledby="category-heading">
+          <div class="section-heading">
+            <div>
+              <span class="step-number">01</span>
+              <div>
+                <h2 id="category-heading">Classifique a categoria</h2>
+                <p>Escolha uma opção para iniciar o formulário.</p>
+              </div>
+            </div>
+            <span class="required-chip">ESCOLHA ÚNICA</span>
+          </div>
+          <div class="category-options" role="group" aria-labelledby="category-heading">
+            @for (category of categories; track category.id) {
+              <button
+                type="button"
+                class="category-option"
+                [class.selected]="selectedCategory() === category.id"
+                [attr.aria-pressed]="selectedCategory() === category.id"
+                [attr.data-category]="category.id"
+                (click)="chooseCategory(category.id)"
+              >
+                <span class="category-icon" aria-hidden="true">{{ category.icon }}</span
+                ><span>{{ category.label }}</span
+                ><span class="selection-check" aria-hidden="true">✓</span>
+              </button>
+            }
+          </div>
+        </section>
+
+        @if (selectedCategory(); as category) {
+          <div data-testid="report-details" class="form-reveal">
+            <section class="form-card" aria-labelledby="details-heading">
+              <div class="section-heading">
+                <div>
+                  <span class="step-number">02</span>
+                  <div>
+                    <h2 id="details-heading">Descreva o que aconteceu</h2>
+                    <p>Informe o fato — não inclua nomes ou dados pessoais.</p>
+                  </div>
+                </div>
+                <span class="required-chip">CAMPOS DA CATEGORIA</span>
+              </div>
+              <div class="form-grid">
+                <label class="field field-wide"
+                  >Nome do registro<input
+                    name="nome"
+                    maxlength="120"
+                    required
+                    [ngModel]="reportFields()['nome'] || ''"
+                    (ngModelChange)="setField('nome', $event)"
+                    placeholder="Ex.: interdição parcial de via"
+                /></label>
+                <label class="field"
+                  >Data e hora do fato<input
+                    name="ocorridoEm"
+                    type="datetime-local"
+                    required
+                    [ngModel]="reportFields()['ocorridoEm'] || ''"
+                    (ngModelChange)="setField('ocorridoEm', $event)"
+                  /><small>Quando aconteceu, não quando está sendo cadastrado.</small></label
+                >
+                <label class="field"
+                  >Gravidade informada<select
+                    name="severidade"
+                    required
+                    [ngModel]="reportFields()['severidade'] || ''"
+                    (ngModelChange)="setField('severidade', $event)"
+                  >
+                    <option value="" disabled>Selecione</option>
+                    <option value="BAIXA">Baixa</option>
+                    <option value="MODERADA">Média</option>
+                    <option value="ALTA">Alta</option>
+                    <option value="CRITICA">Crítica</option></select
+                  ><small>Não equivale à verificação independente.</small></label
+                >
+                @if (category === 'TRANSITO') {
+                  <div data-testid="traffic-fields" class="specific-fields field-wide">
+                    <h3>Detalhes de trânsito</h3>
+                    <div class="form-grid">
+                      <label class="field"
+                        >Tipo<select
+                          name="tipoTransito"
+                          required
+                          [ngModel]="reportFields()['tipoTransito'] || ''"
+                          (ngModelChange)="setField('tipoTransito', $event)"
+                        >
+                          <option value="" disabled>Selecione</option>
+                          <option value="COLISAO">Colisão</option>
+                          <option value="CONGESTIONAMENTO">Congestionamento</option>
+                          <option value="INTERDICAO">Interdição</option>
+                          <option value="PANE">Pane</option>
+                          <option value="OUTRO">Outro</option>
+                        </select></label
+                      ><label class="field"
+                        >Impacto na via<select
+                          name="impactoVia"
+                          required
+                          [ngModel]="reportFields()['impactoVia'] || ''"
+                          (ngModelChange)="setField('impactoVia', $event)"
+                        >
+                          <option value="" disabled>Selecione</option>
+                          <option value="LIVRE">Livre</option>
+                          <option value="PARCIAL">Parcial</option>
+                          <option value="TOTAL">Total</option>
+                          <option value="NAO_INFORMADO">Não informado</option>
+                        </select></label
+                      >
+                    </div>
+                  </div>
+                }
+                @if (category === 'SEGURANCA') {
+                  <div data-testid="security-fields" class="specific-fields field-wide">
+                    <h3>Classificação de segurança</h3>
+                    <div class="form-grid">
+                      <label class="field"
+                        >Tipo de informação<select
+                          name="grupo"
+                          required
+                          [ngModel]="reportFields()['grupo'] || ''"
+                          (ngModelChange)="setField('grupo', $event)"
+                        >
+                          <option value="" disabled>Selecione</option>
+                          <option value="CRIMES">Crimes</option>
+                          <option value="ASSUNTOS_SEGURANCA">Assuntos diversos de segurança</option>
+                          <option value="ATIVIDADE_POLICIAL">Atividade policial</option>
+                          <option value="ORDEM_PUBLICA">Ordem pública</option>
+                          <option value="ALERTA">Alerta</option>
+                          <option value="OUTROS_REGISTROS">Outros registros</option>
+                        </select></label
+                      >
+                      @if (reportFields()['grupo'] === 'CRIMES') {
+                        <label class="field"
+                          >Tipo de crime<select
+                            name="tipoCrime"
+                            required
+                            [ngModel]="reportFields()['tipoCrime'] || ''"
+                            (ngModelChange)="setField('tipoCrime', $event)"
+                          >
+                            <option value="" disabled>Selecione</option>
+                            <option value="FURTO">Furto</option>
+                            <option value="ROUBO_TRANSEUNTE">Roubo a transeunte</option>
+                            <option value="ESTELIONATO">Estelionato</option>
+                            <option value="AMEACA">Ameaça</option>
+                            <option value="LESAO_CORPORAL_DOLOSA">Lesão corporal dolosa</option>
+                            <option value="ROUBO_VEICULO">Roubo de veículo</option>
+                            <option value="FURTO_VEICULO">Furto de veículo</option>
+                            <option value="ROUBO_COLETIVO">Roubo em transporte coletivo</option>
+                            <option value="ROUBO_CARGA">Roubo de carga</option>
+                            <option value="HOMICIDIO_DOLOSO">Homicídio doloso</option>
+                          </select></label
+                        >
+                      }
+                    </div>
+                    <p class="field-note">Não inclua identificação de envolvidos ou vítimas.</p>
+                  </div>
+                }
+                @if (category === 'CONTINGENCIA') {
+                  <div data-testid="contingency-fields" class="specific-fields field-wide">
+                    <h3>Detalhes de contingência</h3>
+                    <div class="form-grid">
+                      <label class="field"
+                        >Tipo<select
+                          name="tipoContingencia"
+                          required
+                          [ngModel]="reportFields()['tipoContingencia'] || ''"
+                          (ngModelChange)="setField('tipoContingencia', $event)"
+                        >
+                          <option value="" disabled>Selecione</option>
+                          <option value="ALAGAMENTO">Alagamento</option>
+                          <option value="DESLIZAMENTO">Deslizamento</option>
+                          <option value="INCENDIO">Incêndio</option>
+                          <option value="FALHA_INFRAESTRUTURA">Falha de infraestrutura</option>
+                          <option value="OUTRO">Outro</option>
+                        </select></label
+                      ><label class="field"
+                        >Área afetada<select
+                          name="areaAfetada"
+                          required
+                          [ngModel]="reportFields()['areaAfetada'] || ''"
+                          (ngModelChange)="setField('areaAfetada', $event)"
+                        >
+                          <option value="" disabled>Selecione</option>
+                          <option value="PONTO">Ponto</option>
+                          <option value="VIA">Via</option>
+                          <option value="ENTORNO">Entorno</option>
+                          <option value="NAO_INFORMADA">Não informada</option>
+                        </select></label
+                      >
+                    </div>
+                    <p class="field-note">
+                      A classificação não representa uma declaração oficial de calamidade.
+                    </p>
+                  </div>
+                }
+                <label class="field field-wide"
+                  >Local de referência<input
+                    name="local"
+                    maxlength="200"
+                    required
+                    [ngModel]="reportFields()['local'] || ''"
+                    (ngModelChange)="setField('local', $event)"
+                    placeholder="Rua, cruzamento ou ponto de referência"
+                /></label>
+                <label class="field field-wide"
+                  >Descrição <span class="optional-label">Opcional</span
+                  ><textarea
+                    name="descricao"
+                    maxlength="2000"
+                    rows="4"
+                    [ngModel]="reportFields()['descricao'] || ''"
+                    (ngModelChange)="setField('descricao', $event)"
+                    placeholder="Acrescente contexto relevante sem dados pessoais."
+                  ></textarea
+                  ><small
+                    >Texto simples. Não inclua nomes, contatos ou endereço residencial.</small
+                  ></label
+                >
+              </div>
+            </section>
+
+            <section class="form-card location-card" aria-labelledby="location-heading">
+              <div class="section-heading">
+                <div>
+                  <span class="step-number">03</span>
+                  <div>
+                    <h2 id="location-heading">Indique o local</h2>
+                    <p>Use coordenadas do ponto da ocorrência, não de quem informa.</p>
+                  </div>
+                </div>
+                <span class="required-chip">CONFIRMAÇÃO NECESSÁRIA</span>
+              </div>
+              <div class="coordinate-grid">
+                <label class="field"
+                  >Longitude<input
+                    name="longitude"
+                    inputmode="decimal"
+                    required
+                    [ngModel]="coordinates().longitude"
+                    (ngModelChange)="setCoordinate('longitude', $event)"
+                    aria-describedby="coordinate-help"
+                /></label>
+                <label class="field"
+                  >Latitude<input
+                    name="latitude"
+                    inputmode="decimal"
+                    required
+                    [ngModel]="coordinates().latitude"
+                    (ngModelChange)="setCoordinate('latitude', $event)"
+                    aria-describedby="coordinate-help"
+                /></label>
+                <button type="button" class="confirm-point" (click)="confirmPoint()">
+                  <span aria-hidden="true">⌖</span>Confirmar coordenadas
+                </button>
+              </div>
+              <p id="coordinate-help" class="coordinate-help">
+                Formato WGS84 · longitude, latitude · exemplo inicial no centro do Rio. Edite para
+                informar o ponto correto.
+              </p>
+              @if (pointConfirmed()) {
+                <p class="point-confirmed" role="status">
+                  <span aria-hidden="true">✓</span> Ponto confirmado para esta demonstração
+                </p>
+              }
+            </section>
+
+            <div class="submit-row">
+              <p class="submit-note">
+                <strong>Envio indisponível nesta demonstração</strong
+                ><span
+                  >Nenhum dado será enviado. Um relato real exigirá acesso de operador e aprovação
+                  antes de aparecer no mapa.</span
+                >
+              </p>
+              <button class="submit-button" type="submit">
+                Verificar cadastro <span aria-hidden="true">✓</span>
+              </button>
+            </div>
+            @if (reportStatus()) {
+              <p class="form-status" role="status">{{ reportStatus() }}</p>
+            }
+          </div>
+        }
+      </form>
+    }
+  </main>
+</div>
