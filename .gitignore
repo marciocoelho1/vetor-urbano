@@ -1,15 +1,13 @@
-# Operating Systems
-.DS_Store
-Thumbs.db
+# Local secrets and environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
 
-# IDEs and Editors
-.idea/
-*.iml
-.vscode/
-*.swp
-*.swo
-
-# Java & Build Tools
+# Java and build tools
 target/
 *.class
 *.jar
@@ -23,24 +21,32 @@ build/
 .gradle/
 out/
 
-# Node & Frontend
+# Node and frontend dependencies/builds
 node_modules/
+dist/
 .angular/
-.angular/cache
+.angular/cache/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-dist/
-.env
-.env.local
-.env.*.local
 
-# Logs
+# Logs and test coverage
 logs/
 *.log
-
-# Test & Coverage
 coverage/
 .nyc_output/
 *.lcov
+
+# IDE and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# Temporary Hermes working data (project skills remain versioned)
+.hermes/cache/
+.hermes/plans/

@@ -1,26 +1,21 @@
-@import 'bootstrap/scss/bootstrap';
 @import 'maplibre-gl/dist/maplibre-gl.css';
-
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;700&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 :root {
   color-scheme: dark;
   --color-bg-base: #09090b;
   --color-bg-surface: #18181b;
   --color-border-subtle: #27272a;
-
-  --color-alert-critical: #ef4444;
-  --color-alert-warning: #f59e0b;
-  --color-alert-safe: #10b981;
-
   --color-text-main: #f4f4f5;
   --color-text-muted: #a1a1aa;
+  --accent: #10b981;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
-
 html,
 body {
   width: 100%;
@@ -29,24 +24,39 @@ body {
   margin: 0;
   background: var(--color-bg-base);
   color: var(--color-text-main);
-  font-family: 'Geist', sans-serif;
 }
-
 body {
   min-height: 100dvh;
+  font-family: 'Geist', 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
-
 h1,
 h2,
-h3,
-h4,
-h5,
-h6 {
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  letter-spacing: -0.02em;
+h3 {
+  font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
 }
-
 :focus-visible {
   outline: 2px solid #6ee7b7;
   outline-offset: 3px;
+}
+
+.map-popup {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  color: #27272a;
+}
+.map-popup strong {
+  font-size: 0.82rem;
+}
+.map-popup p {
+  margin: 0;
+  color: #52525b;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+.map-popup span,
+.map-popup small {
+  color: #71717a;
+  font-size: 0.66rem;
 }

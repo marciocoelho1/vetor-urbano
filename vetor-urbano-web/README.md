@@ -1,24 +1,25 @@
-# Vetor Urbano — frontend
+# Vetor Urbano — aplicação web
 
-Aplicação Angular do mapa público, cujo primeiro fluxo completo será demonstrado localmente. Hoje há um shell com navegação, mapa-base MapLibre e mensagens de carregamento e erro. A consulta de ocorrências, os filtros e o formulário ainda não foram implementados. O [pipeline do projeto](../docs/architecture/Pipeline_Vetor_Urbano.md) descreve o MVP e a ordem recomendada das próximas entregas.
+Aplicação Angular da demonstração de consulta geográfica. O mapa usa MapLibre; ocorrências e pontos de interesse são dados sintéticos. Os três grupos de categoria do formulário servem à demonstração visual e não substituem o contrato das seis categorias em `docs/specs/SPEC-001-REQUIREMENTS.md`.
+
+A interface inclui filtros, alternativa em lista, visualização de densidade e formulário progressivo. Não há chamadas à API nem envio, autenticação, persistência ou moderação. O mapa-base OpenStreetMap depende de rede e WebGL; o worker MapLibre é publicado como asset local do build.
 
 ## Executar localmente
 
-Na pasta `vetor-urbano-web/`, com as dependências instaladas por `npm ci`:
-
 ```bash
+npm ci
 npm start
 ```
 
-Abra `http://localhost:4200/`. O mapa-base usa tiles de um serviço externo; sua visualização depende de conexão com esse serviço.
+Abra `http://localhost:4200/`.
 
-## Verificações disponíveis
+## Verificações
 
 ```bash
-npx tsc --noEmit
-npm run test -- --watch=false
-npx ng build --configuration development
+npm run lint
+npm run typecheck
+npm run test:ci
 npm run build
 ```
 
-Em 2026-09-24, tipos e dois testes passaram. O build de desenvolvimento passou com aviso de depreciação do Sass. O build de produção falhou ao tentar acessar Google Fonts (`EAI_AGAIN`), portanto seu resultado ainda precisa ser validado após resolver a dependência de rede. A inspeção visual responsiva permanece pendente. Não há script de teste ponta a ponta configurado.
+Use `bash harness/verify.sh` na raiz para executar os checks do monorepo. Os testes de frontend não validam a API ou a persistência espacial, que ainda não estão implementadas.

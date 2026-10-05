@@ -34,29 +34,35 @@ for file in "${REQUIRED_FILES[@]}"; do
   fi
 done
 
-# Step 2: Backend Check (if pom.xml or build.gradle exists)
-echo "--> [2/4] Verifying Backend Service State..."
-if [[ -f "backend/pom.xml" ]]; then
-  echo "  Running backend unit tests and compile check..."
-  (cd backend && ./mvnw test-compile --no-transfer-progress)
+# Step 2: API Check (when the Spring Boot application exists)
+echo "--> [2/4] Verifying API Service State..."
+if [[ -f "vetor-urbano-api/pom.xml" ]]; then
+  if [[ -x "vetor-urbano-api/mvnw" ]]; then
+    echo "  Running API unit tests and compile check..."
+    (cd vetor-urbano-api && ./mvnw test-compile --no-transfer-progress)
+  else
+    echo "  [FAIL] API pom.xml exists but the Maven Wrapper is missing or not executable."
+    FAILED=1
+  fi
 else
-  echo "  [INFO] Backend not yet scaffolded (scheduled for Phase v0.4.0-alpha)."
+  echo "  [INFO] Spring Boot API is not scaffolded; only the SQL draft exists."
 fi
 
 # Step 3: Frontend Check (if package.json exists)
 echo "--> [3/4] Verifying Frontend Client State..."
-if [[ -f "frontend/package.json" ]]; then
-  echo "  Running frontend linter and TypeScript check..."
-  (cd frontend && npm run lint && npm run typecheck)
+if [[ -f "vetor-urbano-web/package.json" ]]; then
+  echo "  Running frontend lint, typecheck, unit tests and production build..."
+  (cd vetor-urbano-web && npm run lint && npm run typecheck && npm run test:ci && npm run build)
 else
-  echo "  [INFO] Frontend not yet scaffolded (scheduled for Phase v0.6.0-alpha)."
+  echo "  [FAIL] Expected Angular app not found at vetor-urbano-web/."
+  FAILED=1
 fi
 
 # Step 4: Security & Git Sanity
 echo "--> [4/4] Verifying Repository & Security Constraints..."
 if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
   # Ensure no private credentials / .env committed
-  if git ls-files | grep -E "(\.env|\.pem|\.key|id_rsa)" > /dev/null; then
+  if git ls-files | grep -E "(^|/)\.env($|/)|\.(pem|key|p12|pfx)$|(^|/)id_rsa$" > /dev/null; then
     echo "  [SECURITY ALERT] Sensitive keys or .env files staged in Git!"
     FAILED=1
   else

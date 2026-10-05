@@ -2,6 +2,13 @@
 
 Este arquivo registra alterações concluídas no Vetor Urbano para manter contexto entre conversas. As entradas são organizadas da mais recente para a mais antiga e resumem os arquivos afetados, a mudança e seu motivo. Requisitos e decisões detalhados continuam nos documentos específicos do projeto.
 
+## 2026-10-05 — Integração seletiva da demonstração na `main`
+
+- **Arquivos:** `.gitignore`; `README.md`; `PATCH_NOTES.md`; `docs/architecture/Pipeline_Vetor_Urbano.md`; `docs/fontes-territoriais.md`; `docs/referencias/ui/`; `harness/verify.sh`; `vetor-urbano-web/`.
+- **Alteração:** incorporada a demonstração à aplicação web existente, mantendo a estrutura de API, SQL e documentos canônicos da `main`; atualizadas as instruções de execução e o harness para os caminhos reais do repositório. Dados e limites da demonstração estão identificados explicitamente.
+- **Motivo:** aproveitar a interface já construída sem substituir a estrutura e os contratos existentes nem apresentar funcionalidades demonstrativas como produto operacional.
+- **Verificações:** `bash -n harness/verify.sh` e `bash harness/verify.sh` passaram; lint, typecheck, 6 testes, build de produção e verificações estruturais/segurança aprovados. `npm audit --audit-level=low` encontrou zero vulnerabilidades. Worker e módulo compartilhado do MapLibre retornaram HTTP 200 no servidor local. Capturas headless em 375, 390, 768 e 1200 px não mostraram overflow horizontal óbvio no estado inicial. A medição identificou placeholder `#777780` sobre `#111115` em 4,25:1, abaixo de WCAG AA. Tiles e marcadores não ficaram visíveis na captura desktop; smoke test de renderização do mapa e validação visual do formulário em telas menores continuam pendentes.
+
 ## 2026-09-24 — Shell do mapa público e alinhamento do escopo
 
 - **Arquivos:** `AGENTS.md`; `README.md`; `docs/PROJECT-LOG.md`; `docs/architecture/Pipeline_Vetor_Urbano.md`; `docs/specs/SPEC-001-REQUIREMENTS.md`; `planejamento/MODELAGEM_DB_V1.md`; `vetor-urbano-web/README.md`; `vetor-urbano-web/src/app/app.html`; `vetor-urbano-web/src/app/app.scss`; `vetor-urbano-web/src/app/app.spec.ts`; `vetor-urbano-web/src/app/app.ts`; `vetor-urbano-web/src/index.html`; `vetor-urbano-web/src/styles.scss`.

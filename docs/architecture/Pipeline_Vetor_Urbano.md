@@ -1,10 +1,10 @@
 # Vetor Urbano — Arquitetura e roadmap do MVP
 
-> **Estado do produto:** MVP em planejamento; consulta e registro de ocorrências ainda não funcionam ponta a ponta.
-> **Estado do frontend:** shell Angular com navegação, mapa-base MapLibre e mensagens de carregamento/erro; sem pontos de ocorrência, filtros ou formulário.
+> **Estado do produto:** há uma demonstração interativa; consulta e registro reais ainda não funcionam ponta a ponta.
+> **Estado do frontend:** mapa MapLibre, filtros, lista alternativa e formulário progressivo com dados sintéticos; sem integração com API ou envio.
 > **Estado da API:** aplicação Spring Boot ainda não inicializada; não há `pom.xml` nem endpoints.
-> **Estado do banco:** há um arquivo SQL V1 inicial; segundo o autor, ele ainda não foi executado em PostgreSQL/PostGIS.
-> **Última vistoria documentada:** 2026-09-24.
+> **Estado do banco:** há um arquivo SQL V1 inicial; ainda não há evidência de execução em PostgreSQL/PostGIS.
+> **Última vistoria documentada:** 2026-10-05.
 
 ## 1. Produto e recorte do MVP
 
@@ -43,7 +43,7 @@ Os contratos devem ser publicados em OpenAPI 3.1. Use /api/v1/, rotas em kebab-c
 
 ## 3. Fases e critérios de conclusão
 
-Os estados abaixo descrevem o repositório visto em 2026-09-24. Uma fase não se torna concluída apenas por existir uma pasta, um documento ou um scaffold. As versões entre parênteses são marcos planejados, não versões já entregues.
+Os estados abaixo descrevem o repositório visto em 2026-10-05. Uma fase não se torna concluída apenas por existir uma pasta, um documento ou um scaffold. As versões entre parênteses são marcos planejados, não versões já entregues.
 
 ### Fase A — Fundação do produto e requisitos (v0.1.0-alpha)
 
@@ -59,9 +59,9 @@ Os estados abaixo descrevem o repositório visto em 2026-09-24. Uma fase não se
 
 ### Fase C — Base cartográfica Angular (v0.3.0-alpha)
 
-**Existente:** shell Angular, sidebar com acesso ao mapa público, mapa-base MapLibre e mensagens para carregamento e erro do mapa. A camada raster depende de um serviço externo; não há marcadores de ocorrência, filtros, formulário ou consumo de API.
-**Verificações em 2026-09-24:** `npx tsc --noEmit` passou; dois testes Angular passaram, mas cobrem apenas a criação do componente e o título; o build de desenvolvimento passou com aviso de depreciação do Sass. `npm run build` falhou ao buscar Google Fonts (`EAI_AGAIN`), antes de comprovar o orçamento do bundle. Não há validação visual responsiva concluída. O harness procura `frontend/` e `backend/`, não os módulos reais, e ainda chama scripts `lint` e `typecheck` que não existem no `package.json`; seu sucesso não comprova as verificações.
-**Conclusão desta fase:** mapa-base e estados de carregamento/erro verificados em navegador e nos tamanhos de tela previstos; compilação, build de produção e testes aplicáveis aprovados. Consulta de ocorrências e formulário pertencem às fases de integração posteriores.
+**Existente:** demonstração Angular com mapa MapLibre, marcadores fictícios, filtros, lista alternativa, densidade visual e formulário progressivo. Os três grupos de categoria da demonstração não substituem as seis categorias do contrato; não há consulta ou envio à API.
+**Verificações em 2026-10-05:** `npm run lint`, `npm run typecheck`, `npm run test:ci` (6 testes) e `npm run build` passaram; `npm audit` encontrou zero vulnerabilidades. `bash harness/verify.sh` passou e informa que a API ainda não está scaffoldada. Capturas headless em 375, 390, 768 e 1200 px não mostraram overflow horizontal óbvio no estado inicial; a tela de formulário foi inspecionada no preview em desktop. Na captura desktop, controles e atribuição do MapLibre apareceram, mas tiles e marcadores não ficaram visíveis.
+**Conclusão desta fase:** a interface está integrada, mas a validação visual do mapa real permanece pendente. A captura headless não comprova o carregamento do worker, tiles ou pontos; não concluir esta fase até repetir o smoke test num navegador com WebGL funcional e conferir os fluxos responsivos do formulário.
 
 ### Fase D — Contrato e API do fluxo público (v0.4.0-alpha)
 
@@ -71,7 +71,8 @@ Os estados abaixo descrevem o repositório visto em 2026-09-24. Uma fase não se
 
 ### Fase E — Integração do mapa com a API (v0.5.0-alpha)
 
-**Entregas:** mapa lendo API, clique para selecionar e confirmar ponto, formulário com seis categorias e quatro gravidades, envio de relatos, feedback de carregamento/erro/sucesso e aviso “não verificado” junto da gravidade informada pelo relator.
+**Existente apenas como demonstração:** clique/confirmação de coordenadas, filtros e formulário progressivo com dados sintéticos. Os grupos exibidos não são o contrato das seis categorias e nada é persistido ou enviado.
+**Entregas pendentes:** integrar a consulta e o envio à API conforme a especificação canônica, mapear as seis categorias e quatro gravidades, e apresentar estados reais de carregamento/erro/sucesso e relatos `REPORTED` como “não verificado”.
 **Conclusão:** fluxo ponta a ponta reproduzível localmente, sem apresentar placeholders como dados reais.
 
 ### Fase F — Alertas durante o uso ativo (v0.6.0-alpha)
@@ -81,7 +82,7 @@ Os estados abaixo descrevem o repositório visto em 2026-09-24. Uma fase não se
 
 ### Fase G — Evolução operacional (versões posteriores)
 
-Avaliar separadamente votação, moderação, heatmap, autenticação operacional e organizações reais. Definir quais políticas de dados, segregação e auditoria serão necessárias antes da implementação.
+Avaliar separadamente votação, moderação, cálculo de heatmap, autenticação operacional e organizações reais. A visualização de densidade atual é demonstrativa, não uma análise validada. Definir políticas de dados, segregação e auditoria antes da implementação.
 
 ### Fase H — Operação e escala (quando justificadas)
 
@@ -92,13 +93,13 @@ Containers, automação de CI, observabilidade, análise de segurança e teste d
 A ordem abaixo mantém cada entrega pequena e explicável. As mudanças de código serão propostas e autorizadas em conversas próprias; este documento registra o caminho e os critérios para avaliar cada etapa.
 
 1. **Usar as decisões fechadas como contrato do primeiro relato.** `docs/specs/SPEC-001-REQUIREMENTS.md` define publicação de `REPORTED` como “não verificado”, ponto confirmado no mapa, seis categorias, gravidade escolhida pelo relator, descrição opcional e status/horário/origem atribuídos pelo servidor. O primeiro MVP é local/de demonstração. A V1 ainda não foi executada e será reduzida ao fluxo público antes da primeira migração.
-2. **Estabilizar a base web e a verificação.** Em um chat de frontend, revisar a dependência de Google Fonts no build de produção, medir o bundle após o build funcionar, tratar o aviso de Sass e validar o mapa em 375, 390, 768 e 1200 px. Em um chat de infraestrutura, corrigir `harness/verify.sh` para apontar para os módulos reais, executar comandos disponíveis e falhar quando um módulo esperado não for verificado. A etapa termina com comandos confiáveis e resultados registrados, sem confundir compilação com teste visual do mapa.
+2. **Concluir a validação visual da base web.** Repetir o smoke test de MapLibre em navegador com WebGL funcional e confirmar worker, tiles e pontos; validar o formulário e reflow em 375, 390, 768 e 1200 px, teclado e contraste WCAG AA. O `harness/verify.sh` já aponta para o frontend atual e executa lint, tipos, testes e build; ele não substitui essa inspeção visual.
 3. **Desenhar o contrato mínimo e adequar o esquema.** Definir em OpenAPI 3.1 os payloads e respostas de `GET /api/v1/incidents` e `POST /api/v1/incidents`, filtros e paginação da leitura, estados e erros Problem Details. Conferir `V1__Initial_Schema.sql` contra esse contrato. Como o arquivo ainda não foi executado, revisar diretamente a V1 para conter ocorrências públicas e tipos necessários, preservando os seis valores de categoria e quatro de severidade. Executar a migração pelo Flyway em PostgreSQL/PostGIS antes de declarar o banco pronto.
 4. **Criar a API do fluxo público.** Inicializar `vetor-urbano-api/` com Spring Boot e implementar validação, gravação e consulta de ocorrências conforme o contrato. Verificar coordenadas válidas e inválidas, regra de visibilidade e persistência em banco. A API só está pronta quando os endpoints e a migração funcionarem juntos em ambiente local reproduzível.
-5. **Conectar o mapa ao fluxo de ocorrências.** Em um chat de frontend, adicionar clique e confirmação do ponto, formulário com as seis categorias e quatro gravidades, marcadores e filtros definidos no contrato, com estados de vazio, carregamento, erro e sucesso. Conferir que um relato enviado e permitido pela regra de publicação pode ser consultado no mapa e que exemplos organizacionais continuam identificados como demonstração.
+5. **Conectar o protótipo ao fluxo de ocorrências.** Adaptar o formulário demonstrativo ao contrato com seis categorias e quatro gravidades; integrar leitura, envio público aprovado, marcadores e filtros à API. Cobrir estados de vazio, carregamento, erro e sucesso, além do aviso “não verificado” e da gravidade informada pelo relator.
 6. **Avaliar alertas com a aplicação aberta.** Depois do fluxo público completo, definir o raio e o modo de atualização; pedir permissão de localização e consultar ocorrências próximas sem armazenar trajetos. Testar permissão negada, localização indisponível e pontos dentro e fora do raio.
 
-O contrato de produto do primeiro relato local está definido. A revisão da V1, o build e o harness podem avançar em chats de implementação separados. Expor o formulário na internet continua condicionado a controles contra abuso e a um caminho para retirar relatos indevidos.
+O contrato de produto do primeiro relato local está definido. A validação visual do mapa, a revisão da V1 e a implementação da API seguem pendentes. Expor o formulário na internet continua condicionado a controles contra abuso e a um caminho para retirar relatos indevidos.
 
 ## 5. Critério de engenharia por incremento
 
