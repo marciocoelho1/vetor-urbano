@@ -1,6 +1,20 @@
 # Escopo — proposta da Fase 0
 
-Revisão: 05/10/2026. **Documento produzido; há um protótipo frontend demonstrativo, sem backend ou persistência.** As propostas abaixo dependem de validação de produto. Fonte dos requisitos: `docs/referencias/contextoInicial.md`; nenhum RF/RNF original foi substituído ou renumerado.
+Revisão: 10/10/2026. **Há um protótipo frontend demonstrativo, sem backend ou persistência.** Fonte dos requisitos originais: `docs/referencias/contextoInicial.md`; nenhum RF/RNF original foi substituído ou renumerado. A direção de produto de 06/10 permanece proposta nos demais pontos, mas a ordem agora aprovada é concluir primeiro a demonstração frontend, sem banco/API/alertas; após a validação do frontend, iniciar a fase de banco e API. A visualização mantém MapLibre com estilo OpenStreetMap via OpenFreeMap Bright. O responsável autorizou o uso demonstrativo dos polígonos e informou possuir autorização; isso não aprova publicação externa, alertas operacionais, dados reais de ocorrências ou demais pontos de escopo em aberto.
+
+## Direção candidata para a versão 1.0 — proposta de 06/10/2026
+
+| Proposta | Avaliação | Condição / questão em aberto |
+|---|---|---|
+| Somente Operadores cadastrariam ocorrências; usuário comum apenas consulta | Válida e alinhada à redução de abuso; cadastro comunitário fica fora da 1.0 | Definir se consulta comum exige conta ou será anônima. Cadastro de Operador nunca será uma rota pública de autoinscrição. |
+| Criar backend Java e banco PostgreSQL | Essencial para persistência e funcionamento real; PostGIS é recomendado para consultas espaciais | Sequência aprovada em 10/10: concluir e validar primeiro o frontend demonstrativo sem banco/API; depois definir contrato/migrações e iniciar a fase PostgreSQL/PostGIS com teste integrado real. |
+| Perfis Admin/dev, Gestor, Operador e Usuário comum | RBAC é válido, com autorização obrigatória no backend | Tratar “dev” como acesso operacional de desenvolvimento, não perfil cotidiano de produção. Separar administrador técnico de Gestor de negócio; acesso privilegiado mínimo, auditado e protegido. MFA para Gestor; decidir se qualquer administrador de produção também exigirá MFA. Definir se o Operador/gestor pode aprovar o próprio cadastro ou se há separação de funções. |
+| Gestor cadastra “filtros” | Indefinido | Especificar se cria filtros salvos pessoais, filtros compartilhados, catálogos ou regras globais; quem edita/remove e como afeta usuários. Até decidir, oferecer filtros de consulta locais, sem tela administrativa de filtros. |
+| Migrar de MapLibre para Google Maps | Não adotada nesta demonstração; manter MapLibre e aprimorar o estilo cartográfico baseado em OpenStreetMap | Reabrir somente com prova comparativa e aprovação de chave, faturamento/limites e termos; a lista deve continuar disponível sem mapa. |
+| Exibir polígonos territoriais | Permitido na demonstração local após autorização informada pelo responsável do projeto | Atribuir à fonte e data-base, sem alegar verificação oficial ou risco atual. Antes de uso operacional/publicação, revisar validade topológica, atualização, cobertura, precisão, comunicação e segurança. |
+| Personalizar pins | Válido e de baixo risco quando os dados do mapa estiverem definidos | Desenhar por categoria/severidade com rótulo/ícone além de cor, legenda acessível, densidade e interação testadas; não antecipar design final antes de validar os tipos de dados. |
+
+Esta direção substitui como hipótese de planejamento a suposição anterior de cadastro anônimo/comunitário. Ela ainda não fecha as regras de consulta, filtros de Gestor, moderação ou administração técnica. A ordem de implementação fica em `PLAN.md` para manter um único roadmap.
 
 ## 1. Problema, restrições e recorte recomendado
 
@@ -20,7 +34,7 @@ O Vetor Urbano pretende permitir explorar ocorrências por localização, catego
 
 ### Fora do MVP, sem descarte dos requisitos
 
-Contas, cadastro, moderação e gestão de operadores (P2); heatmap (P3); votos/relevância (evolução de P4); push, geofencing, fluxos contínuos, alta disponibilidade e escala (pesquisa P4). Fontes reais, polígonos, anexos, exportação Excel, BI e publicação externa não estão autorizados. Exportação/BI são inspiração de produto, ainda não requisitos próprios aprovados.
+Contas, cadastro, moderação e gestão de operadores (P2); heatmap semântico avançado (P3); votos/relevância, alertas/push/geofencing, fluxos contínuos, alta disponibilidade e escala (pesquisa P4). Dados reais de ocorrências, exportação Excel, BI e publicação externa não estão autorizados. Os polígonos territoriais foram autorizados para a demonstração local com atribuição à fonte; não são dados operacionais verificados nem base para alertas. Exportação/BI são inspiração de produto, ainda não requisitos próprios aprovados.
 
 **Território:** P1.1 pode usar pontos sintéticos de demonstração no Rio, sem alegar cobertura da Baixada ou representar ocorrências reais. Não inferir pertencimento municipal por retângulo visual. Antes de validar cobertura: aprovar lista de municípios, identificadores e fonte/licença/data dos limites. A ausência dessa lista não impede a demonstração técnica, mas impede declarar cobertura territorial completa.
 
@@ -57,7 +71,7 @@ A consulta anônima é hipótese adicional ao RF05, não uma permissão presumid
 | RNF07 | Tokens; no máximo **1 hora de inatividade**; revogação imediata de Gestor/Operador | Evolução posterior — P2 | Comparação de token opaco e JWT em `arquitetura.md`; testar limite de inatividade e próxima requisição após revogação. |
 | RNF08 | MFA obrigatório para Gestor, app autenticador ou SMS | Evolução posterior — P2 | Não introduzir painel Gestor com exceção temporária. Proposta: app autenticador e recuperação; custos de SMS não assumidos. |
 
-**Funcionalidades sem ID original:** “Mancha Térmica” integra a parte de heatmap do RF02 (P3); “Áreas Dominadas” permanece pesquisa P4 com fonte não fornecida. Os nomes acima são os do contexto, não classificações factuais feitas pelo sistema.
+**Funcionalidades sem ID original:** “Mancha Térmica” integra a parte de heatmap do RF02 (P3). A camada de áreas territoriais está agora disponível na demonstração local com data-base e atribuição à fonte; não constitui um requisito aprovado de risco atual ou alerta.
 
 ## 4. Regras propostas — todas com status “a validar”
 

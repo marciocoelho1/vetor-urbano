@@ -1,5 +1,28 @@
 # Patch notes
 
+## 2026-10-10 — Compatibilidade, relatório e detalhes inline
+
+### Adicionado e corrigido
+- Detalhes de ocorrência expandem dentro do próprio resultado, alternam entre abrir/fechar pelo mesmo botão e limitam a cinco registros simultâneos; detalhes de registros filtrados são removidos.
+- Mapa inline na etapa “Indique o local” para as três categorias, com coordenadas editáveis e marcador sincronizado; centro inicial na Central do Brasil.
+- Relatório XLSX em pt-BR com datas de Brasília, alinhamento, larguras, cabeçalhos fixos, autofiltro e impressão em paisagem.
+- MapLibre/OpenFreeMap permanece como caminho principal; sem WebGL2, Leaflet 1.9.4 e CSS são carregados sob demanda. O fallback mantém pontos, popups, camadas de calor separadas, raio, polígonos filtrados e mapa de cadastro.
+- O provedor raster/zoom/atribuição ficam no asset estático `frontend/public/maps/raster-provider.json`; padrão OSM, atribuição visível e link “Corrigir mapa”. Nenhuma credencial foi adicionada.
+- Corrigida a pilha do mapa para controles de raio receberem clique também com Leaflet; o grupo do raio recebeu título acessível sem a legenda clipping. Espaçamento dos presets passou a 6 px e o botão “Detalhes” alinha com o ícone do registro.
+- JavaScript/CSS de MapLibre e Leaflet permanecem lazy; não houve aumento do limite de bundle.
+
+### Verificação
+- `bash harness.sh frontend`: lint, 47 testes e build passaram; bundle inicial 439,56 kB (limite 500 kB), sem avisos.
+- `npm run test:e2e -- --workers=1`: 15 passados, 1 ignorado. Fallback Gecko roda no projeto Firefox; testes cobrem mapas, worker/CSS, tiles de teste, raio/territórios, cadastro, detalhe até cinco, teclado, XLSX, mobile e alinhamento visual.
+- Smoke test separado em Firefox 157 headless com WebGL2 desativado usou OSM real: 9 tiles no mapa público e 15 no cadastro retornaram HTTP 200; Referer/User-Agent padrão, atribuição e clique que preencheu coordenadas foram confirmados. Captura mostrou tiles contínuos.
+- Build lazy: MapLibre 1,07 MB + CSS 83,13 kB; Leaflet 149,42 kB + CSS 11,07 kB; nenhum desses estilos/engines pesa no bundle inicial até a seleção do renderer.
+
+### Limites mantidos
+- Frontend demonstrativo; sem API, backend, banco, autenticação real, persistência de cadastro ou ingestão de fontes.
+- A suíte E2E intercepta tiles para estabilidade; o smoke test real comprova somente a sessão atual, não disponibilidade futura/SLA. QA ainda não incluiu leitor de tela, hardware móvel real ou desempenho.
+
+> A seção abaixo preserva o histórico anterior (estado revisado em 05/10/2026); para o estado atual, use esta atualização e `PLAN.md`.
+
 ## 2026-10-01 — Protótipo interativo do Vetor Urbano
 
 Revisado em 05/10/2026 para refletir os testes e a configuração final do worker; a renderização do mapa em navegador segue pendente de smoke test.

@@ -355,7 +355,7 @@
 .period-options {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 4px;
+  gap: 6px;
 }
 .period-option {
   position: relative;
@@ -430,6 +430,54 @@
   color: #fbbf24;
   font-size: 0.68rem;
 }
+.source-warning a {
+  width: fit-content;
+  color: #6ee7b7;
+  font-size: 0.67rem;
+  text-underline-offset: 3px;
+}
+.inline-retry {
+  width: fit-content;
+  min-height: 34px;
+  padding-inline: 9px;
+  color: #fbbf24;
+  font-size: 0.64rem;
+}
+.territory-choice {
+  align-items: center;
+  gap: 7px;
+}
+.territory-choice input {
+  width: 14px;
+  height: 14px;
+}
+.territory-swatch {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border: 1px solid rgb(255 255 255 / 72%);
+  border-radius: 3px;
+}
+.territory-label {
+  min-width: 0;
+  flex: 1;
+  line-height: 1.25;
+}
+.territory-count {
+  color: #92929c;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+}
+.territory-legend-note {
+  color: #dedee3;
+}
+.legend-area-mark {
+  display: inline-block;
+  width: 12px;
+  height: 10px;
+  border: 1px solid #f0a72b;
+  background: rgb(240 167 43 / 19%);
+}
 
 .map-column {
   min-width: 0;
@@ -443,6 +491,68 @@
   padding: 0 2px 8px;
   color: #96969f;
   font-size: 0.7rem;
+}
+.map-layout.filters-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+.filter-panel[hidden] {
+  display: none;
+}
+.map-meta-bar > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+.map-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.map-tool-button,
+.map-expand-toggle,
+.search-clear,
+.inline-retry {
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid #34343b;
+  border-radius: 7px;
+  background: #17171b;
+  color: #e4e4e7;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.69rem;
+  font-weight: 600;
+}
+.map-tool-button:hover,
+.map-expand-toggle:hover,
+.search-clear:hover,
+.inline-retry:hover {
+  border-color: #10b981;
+  background: #1b2421;
+}
+.map-expand-toggle {
+  position: absolute;
+  z-index: 800;
+  top: 12px;
+  right: 58px;
+  min-height: 38px;
+  background: rgb(21 21 24 / 94%);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 22%);
+}
+.map-frame.map-expanded {
+  position: fixed;
+  z-index: 1000;
+  inset: 12px;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgb(5 7 9 / 84%);
+}
+.map-frame.map-expanded .map-expand-toggle {
+  position: fixed;
+  z-index: 1100;
+  top: 16px;
+  right: 66px;
 }
 .result-total {
   display: flex;
@@ -471,6 +581,7 @@
 }
 .map-canvas {
   position: absolute;
+  z-index: 0;
   inset: 0;
 }
 .map-loading {
@@ -531,6 +642,7 @@
     repeating-linear-gradient(90deg, transparent 0 92px, rgb(255 255 255 / 4%) 93px 94px), #171b1d;
   color: #b7b7bf;
   text-align: center;
+  overflow-wrap: anywhere;
 }
 .map-fallback strong {
   color: #f4f4f5;
@@ -623,15 +735,34 @@
   margin: 0;
   list-style: none;
 }
+.result-list > li {
+  --result-inset: 14px;
+  border-bottom: 1px solid #28282d;
+}
 .result-item {
   display: flex;
+  width: 100%;
+  min-height: 55px;
   align-items: center;
   gap: 10px;
-  min-height: 55px;
-  padding: 9px 14px;
+  padding: 9px var(--result-inset);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
-.result-item + .result-item {
+.result-list li + li .result-item {
   border-top: 1px solid #28282d;
+}
+.result-item:hover,
+.result-item[aria-pressed='true'] {
+  background: rgb(255 255 255 / 3%);
+}
+.result-item[aria-pressed='true'] .record-symbol {
+  border-color: #10b981;
+  box-shadow: 0 0 0 2px rgb(16 185 129 / 16%);
 }
 .record-symbol {
   display: grid;
@@ -675,6 +806,50 @@
   color: #a1a1aa;
   font-size: 0.52rem;
   letter-spacing: 0.07em;
+}
+.record-detail-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  margin: 0 14px 9px var(--result-inset);
+  padding: 5px 10px;
+  border: 1px solid #3a3a42;
+  border-radius: 7px;
+  background: #202025;
+  color: #a7f3d0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.67rem;
+}
+.record-detail-button:hover:not(:disabled) {
+  border-color: #10b981;
+  background: rgb(16 185 129 / 8%);
+}
+.record-detail-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+.record-detail-button:focus-visible {
+  outline: 2px solid #6ee7b7;
+  outline-offset: 2px;
+}
+.result-inline-detail {
+  margin: 0 12px 12px;
+}
+.result-inline-detail h3 {
+  margin: 0 38px 9px 0;
+  color: #f4f4f5;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.88rem;
+}
+.results-detail-limit {
+  padding: 8px 14px;
+  margin: 0;
+  border-top: 1px solid #29292e;
+  color: #b7b7bf;
+  font-size: 0.67rem;
+  line-height: 1.45;
 }
 .empty-state {
   display: grid;
@@ -991,17 +1166,24 @@
   }
   .sidebar {
     position: relative;
+    width: 100%;
+    min-width: 0;
     height: auto;
     min-height: 0;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 8px;
     padding: 10px 14px;
     border-right: 0;
     border-bottom: 1px solid #29292e;
   }
+  .sidebar .brand {
+    align-self: flex-start;
+  }
   .sidebar-section {
+    width: 100%;
+    min-width: 0;
     margin: 0;
   }
   .side-label,
@@ -1010,13 +1192,21 @@
   }
   .primary-nav {
     display: flex;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
     gap: 5px;
+    overflow-x: auto;
+    padding: 2px 1px 6px;
+    overscroll-behavior-inline: contain;
   }
   .nav-link {
+    flex: 0 0 auto;
     width: auto;
     min-height: 38px;
     padding-inline: 9px;
     font-size: 0.74rem;
+    white-space: nowrap;
   }
   .nav-symbol {
     width: 15px;
@@ -1076,8 +1266,29 @@
   .map-meta-bar {
     align-items: flex-start;
     flex-direction: column;
-    gap: 4px;
+    gap: 8px;
     padding-block: 7px;
+  }
+  .map-tools {
+    width: 100%;
+  }
+  .map-tool-button {
+    min-height: 40px;
+  }
+
+  .map-expand-toggle {
+    right: 54px;
+    max-width: calc(100% - 106px);
+    padding-inline: 8px;
+    font-size: 0.63rem;
+  }
+  .map-frame.map-expanded {
+    inset: 6px;
+    min-height: 0;
+  }
+  .map-frame.map-expanded .map-expand-toggle {
+    top: 10px;
+    right: 56px;
   }
   .map-frame {
     height: 46vh;

@@ -18,7 +18,7 @@
 ## Produto e arquitetura
 
 - Stack solicitada: Angular + SCSS, Java e PostgreSQL. Região inicial: cidade do Rio de Janeiro e Baixada Fluminense; confirmar municípios e limites antes de validar cobertura.
-- Hipótese para a Fase 0: Spring Boot em um único serviço, módulos simples por funcionalidade, PostgreSQL + PostGIS, API HTTP, MapLibre, migrações versionadas, npm com lockfile e Maven Wrapper. Confirme compatibilidade e registre as versões escolhidas antes de gerar projetos.
+- Hipótese para o backend: Spring Boot em um único serviço, módulos simples por funcionalidade, PostgreSQL + PostGIS, API HTTP, migrações versionadas, npm com lockfile e Maven Wrapper. MapLibre é o provedor atual do protótipo; Google Maps é uma alternativa em avaliação, sujeita a prova comparativa e decisão de custo. Confirme compatibilidade e registre as versões escolhidas antes de gerar projetos.
 - Prefira funcionalidades completas e pequenas, atravessando interface, API e persistência. Modele dados e contratos cedo; não deixe o banco para depois de todo o frontend/backend.
 - Evite dependências, abstrações, microserviços e mensageria sem um problema concreto. Metas de escala e disponibilidade exigem evidências; não são capacidades já alcançadas.
 - Preserve a identidade visual dos anexos. Mudanças de biblioteca, tema ou navegação exigem justificativa ligada ao produto.

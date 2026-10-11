@@ -4,11 +4,21 @@ Aplicação demonstrativa para consulta e análise geográfica de ocorrências, 
 
 ## Estado implementado
 
-Existe uma **demonstração frontend Angular** em `frontend/`, derivada da identidade visual dos anexos: navegação entre mapa e cadastro, filtros acumuláveis, formulário progressivo por categoria, lista alternativa e modo de mancha térmica. Os registros e POIs visíveis são sintéticos e ficam em memória no navegador.
+Existe uma **demonstração frontend Angular** em `frontend/`, derivada da identidade visual dos anexos: navegação entre mapa e cadastro, filtros acumuláveis, busca de ocorrências e áreas, painel recolhível, mapa ampliado, formulário progressivo por categoria, lista alternativa e camadas de densidade separadas. O protótipo também apresenta histórico/informes ativos, dashboard, reprodução temporal, comparação, filtros salvos, triagem manual de referências e exportação XLSX.
+
+O filtro de raio fica dentro do mapa: inicia em 100 m, pode ser ajustado pelo slider ou pelo scroll do mouse até 5.000 m e aparece como polígono roxo-claro `#C4B5FD` com preenchimento transparente. O cálculo é local e aproximado. Períodos usam calendário e hora de Brasília; datas/horários personalizados ficam no filtro por período.
+
+O centro inicial dos mapas e do filtro por raio é a Central do Brasil, nas coordenadas GeoJSON `[longitude, latitude]` `[-43.19156448029434, -22.903318808380494]`. Em **Registrar ocorrência**, o mapa fica embutido em **Indique o local** para Trânsito, Segurança e Contingência; clicar/toque preenche longitude e latitude, que também podem ser digitadas.
+
+Em **Resultados visíveis**, cada registro pode abrir/fechar seus detalhes no próprio item. Até cinco painéis podem permanecer abertos; ao mudar filtros, detalhes que deixam de estar visíveis são fechados.
+
+A exportação XLSX usa rótulos e valores de apresentação pt-BR, horários de Brasília, colunas com larguras explícitas, cabeçalhos formatados/fixos, filtros de planilha e ajuste de impressão em paisagem.
+
+Arquivos CSV agregados e GeoJSON de eventos podem ser importados manualmente após informar origem, URL, licença/autorização, data de referência e limitações. O conteúdo é processado na aba atual e descartado ao atualizá-la/fechá-la. Nenhum arquivo é enviado; não há conexão automática com ISP-RJ, Fogo Cruzado, OTT, COR ou jornais. Estatísticas agregadas permanecem separadas de eventos geolocalizados. Registros sintéticos seguem identificados; polígonos territoriais são camada estática atribuída à fonte e com ressalvas explícitas.
 
 Ainda **não existe backend Java executável, API, autenticação, persistência PostgreSQL/PostGIS ou fluxo real de moderação**. O botão valida o cadastro demonstrativo, mas não envia dados. Não publicar nem usar a interface para decisões de segurança.
 
-O mapa-base usa tiles OpenStreetMap com atribuição visível e depende de conexão/WebGL. O worker MapLibre e seu módulo compartilhado são servidos como assets locais; a execução real do worker ainda precisa de smoke test em navegador. A camada de domínio territorial permanece indisponível: as fontes indicadas não forneceram geometrias/licença verificáveis para integração. Veja `docs/fontes-territoriais.md`. Não há polígonos ou alegações territoriais fictícias no mapa.
+O renderizador principal é **MapLibre** com o estilo vetorial Bright da instância pública OpenFreeMap, baseada em dados OpenStreetMap; a atribuição permanece visível. Quando WebGL2 não está disponível, o JavaScript/CSS do MapLibre não é carregado: um mapa 2D **Leaflet** é carregado sob demanda com tiles raster configurados em `frontend/public/maps/raster-provider.json` (o padrão é OpenStreetMap). O fallback preserva pontos, popups, heat layers separados, raio e polígonos selecionados; os tiles continuam dependendo de rede e de um serviço externo sem SLA. A configuração de tiles e atribuição pode ser trocada como asset estático, sem recompilar o JavaScript. A lista permanece acessível se os dois mapas falharem. A camada territorial está em `frontend/public/maps/areas-territoriais.geojson`; sua origem, data-base e limites estão em `docs/fontes-territoriais.md`.
 
 O recorte territorial solicitado é a cidade do Rio de Janeiro e a Baixada Fluminense. A lista de municípios e os limites ainda não foram definidos; não declarar cobertura completa.
 
@@ -50,22 +60,30 @@ npm run test:ci
 npm run build
 ```
 
-- O mapa real depende de WebGL e rede para buscar tiles; se indisponível, a lista e os filtros continuam acessíveis.
-- Os exemplos de formulário não são enviados. Sem API Java, autenticação de Operador e aprovação, nenhum registro será persistido/publicado.
-- O provedor público de tiles é apenas para demonstração de baixo volume; escolher serviço adequado antes de publicar ou escalar.
-- `bash harness.sh docs` verifica orientação e referências; `bash harness.sh planning` exige os documentos de planejamento históricos; `bash harness.sh frontend` executa lint, testes e build.
+Para QA de navegador real (Playwright), instalar os navegadores uma vez e executar a matriz Firefox/Chromium:
 
-**Os modos documentais não comprovam o produto.** Testes de unidade/build do frontend não comprovam API, banco real, segurança, acessibilidade completa ou desempenho. Resultados efetivamente executados estão em `PLAN.md`.
+```bash
+npx playwright install firefox chromium
+npm run test:e2e
+```
+
+Os testes E2E iniciam o servidor Angular local e exercitam MapLibre/WebGL2, o fallback Leaflet no Firefox com WebGL2 desativado (tiles simulados para repetibilidade), filtros/raio/territórios, mapa inline de cadastro, detalhes, teclado e larguras de 390/320 px. Capturas, traces e downloads ficam em `frontend/test-results/`, excluídos do Git.
+
+- O mapa principal depende de WebGL2. Sem WebGL2, o fallback 2D busca tiles raster pela configuração estática; ambos dependem de rede/provedor. Em Firefox 157 headless com WebGL2 desativado, o smoke test separado recebeu tiles reais HTTP 200, verificou atribuição e selecionou coordenadas no mapa de cadastro. Se ambos os renderizadores falharem, lista e filtros continuam acessíveis. O raio usa centro selecionável/digitável e é uma estimativa local.
+- Os exemplos de formulário não são enviados. Sem API Java, autenticação de Operador e aprovação, nenhum registro será persistido/publicado.
+- OpenFreeMap Bright é uma instância pública sem chave de API e sem garantia de disponibilidade; seus termos exigem que a pessoa integradora tenha ao menos 18 anos. O fallback usa o serviço padrão de tiles OSM, seguindo atribuição e uso normal do navegador; revisar os termos dos dois serviços, contato e capacidade antes de publicação.
+- `bash harness.sh docs` verifica orientação e referências; `bash harness.sh planning` verifica os documentos atuais de produto/roadmap; `bash harness.sh frontend` executa lint, testes e build. E2E de navegador real roda separadamente por `npm run test:e2e` após instalar Firefox e Chromium com Playwright.
+
+Os modos documentais não comprovam o produto. **Testes de unidade/build do frontend não comprovam API, banco real, segurança ou desempenho.** O E2E de navegador valida os fluxos que exercita, não substitui revisão manual com leitor de tela nem garante todos os dispositivos. Resultados efetivamente executados estão em `PLAN.md`.
 
 Os modos `backend` e `all` continuam bloqueados enquanto a aplicação Java e seus testes de integração PostGIS não existirem. O harness não instala dependências nem cria testes. Suítes ausentes/ignoradas não podem ser tratadas como sucesso.
 
-## Como continuar
+## Roadmap
 
-1. Evoluir a fatia vertical do formulário com API Java e persistência PostGIS, sem endpoint de escrita público.
-2. Implementar autenticação/autorização de Operador e fila de moderação antes de permitir envio real.
-3. Corrigir a cobertura territorial (municípios/limites) e escolher provedores/fontes licenciados antes de habilitar dados reais ou polígonos.
-4. Completar testes de integração em PostgreSQL/PostGIS e o roteiro ponta a ponta; ver `docs/implementacao-2026-10.md`.
+A ordem aprovada em 10/10/2026 é concluir e validar o frontend demonstrativo, sem banco/API/alertas; depois iniciar a fatia de API + PostgreSQL/PostGIS; então integrar consulta e cadastro conforme decisões de acesso/moderação; mais adiante revisar atualização, cobertura e uso dos polígonos em contexto operacional. Os fluxos de fontes e triagem atuais são exclusivamente manuais, locais e demonstrativos. O estado detalhado está em `PLAN.md`.
 
-Princípio de trabalho: contrato e dados cedo; incrementos que atravessam banco, API e interface; testes reais. A interface atual é uma base visual e interativa, não uma entrega full-stack.
+Google Maps não foi escolhido para esta entrega: a visualização usa MapLibre/OpenFreeMap com Leaflet/OSM raster como fallback sem WebGL2. Os polígonos estão integrados apenas à demonstração frontend, por autorização informada pelo responsável; não há API, banco, alertas, publicação externa ou versão 1.0.
+
+As funcionalidades permanecem frontend-only. O QA automatizado de WebGL2, Firefox sem WebGL2, teclado e telas estreitas passou em Firefox/Chromium; o mapa 2D e a seleção no cadastro também foram testados com tiles OSM reais em Firefox. A revisão manual com leitor de tela/aparelho físico e a decisão do provedor para publicação continuam pendentes, assim como R0 antes da fase full-stack. Consulte `PLAN.md` para evidências e limites.
 
 As referências visuais originais foram preservadas; `visuais/` continua disponível para comparação e não integra o build Angular. O histórico de alterações desta entrega está em `PATCH_NOTES.md`.

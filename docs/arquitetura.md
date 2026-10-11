@@ -1,18 +1,18 @@
-# Arquitetura — hipótese inicial, não implementada
+# Arquitetura — frontend demonstrativo existente; backend proposto
 
-Revisão: 26/09/2026. Stack fornecida: **Angular + SCSS, Java, PostgreSQL**. Todo acréscimo técnico abaixo está **proposto / a validar**, não aprovado. Não foram gerados manifests, aplicações, migrações ou infraestrutura. Nenhum ADR novo: ainda não houve decisão arquitetural aprovada nesta rodada.
+Revisão: 10/10/2026. Stack fornecida: **Angular + SCSS, Java, PostgreSQL**. O frontend demonstrativo existe com MapLibre/OpenFreeMap como renderizador principal e Leaflet/OSM raster como fallback sem WebGL2; **não existe backend Java, API, migração ou banco do produto**. Decisão aprovada: concluir o frontend local antes da fase de banco/API e não implementar alertas neste incremento. Google Maps não foi escolhido para esta demonstração.
 
 ## 1. Evidência atual e fluxo pretendido
 
-Existem documentos, `harness.sh` e três referências de UI. Não existem `frontend/package.json`, componente TypeScript, `backend/pom.xml`, Maven Wrapper ou schema de banco. A sintaxe Angular `@if`, `mapLoading()` e `mapError()` no HTML não constitui aplicação executável. Análise visual foi estática, sem renderização ou medição de contraste/desempenho.
+Existe o protótipo Angular em `frontend/`, com componentes, manifest/lockfile e renderizadores MapLibre/Leaflet carregados sob demanda. A demonstração usa ocorrências/POIs sintéticos em memória e, sob demanda, uma camada GeoJSON territorial com origem e limitações identificadas. Ainda não existem `backend/pom.xml`, Maven Wrapper, API ou schema/migração do banco do produto. Playwright validou os fluxos em Firefox/Chromium; um smoke test em Firefox 157 headless, com WebGL2 desativado, carregou os dois mapas e tiles OSM reais. Leitor de tela e hardware móvel real continuam pendentes.
 
-Fluxo proposto P1.1:
+Fluxo legado P1.1 (somente leitura; reconciliar antes de iniciar):
 
 ```text
 Carga local de demonstração (sem endpoint de escrita)
     → PostgreSQL + PostGIS: ocorrência sintética aprovada
     → repositório de consulta → serviço → controlador HTTP / DTO público
-    → Angular: cliente HTTP → estado da consulta → mapa MapLibre + lista
+    → Angular: cliente HTTP → estado da consulta → mapa MapLibre/Leaflet + lista
 ```
 
 Falha de tiles/WebGL não deve apagar uma lista recebida pela API. O navegador não se conecta diretamente ao banco; a API decide quais campos e estados são públicos. Implantação inicial apenas local, sem compromisso de disponibilidade operacional.
@@ -26,7 +26,7 @@ Falha de tiles/WebGL não deve apagar uma lista recebida pela API. O navegador n
 | PostgreSQL + PostGIS | Tipos e consultas espaciais para o raio previsto | Apenas latitude/longitude e cálculo manual exigiriam resolver distância/índice por conta própria. Proposta: `geography(Point,4326)` com GiST; `ST_DWithin` em geography recebe metros e aproveita filtro por índice.[5] |
 | Migrações versionadas com Flyway | Banco reproduzível e evolução rastreável | SQL manual solto perde histórico de aplicação. Nunca editar migração já aplicada; gerar nova. Seed demonstrativo separado e restrito ao ambiente de demonstração. |
 | API HTTP JSON, contrato documentado | Fronteira explícita entre Angular e Java; testes independentes | OpenAPI em arquivo no incremento, sem biblioteca de geração automática obrigatória; mocks só nos testes, não como entrega integrada. |
-| MapLibre e Bootstrap/SCSS da referência | Preservar identidade e o mapa como foco | Não trocar renderizador/tema sem problema demonstrado. O estilo MapLibre aponta fontes e recursos: escolher renderizador não fornece automaticamente tiles, licença ou hospedagem.[11] |
+| MapLibre/OpenFreeMap Bright + Leaflet/OSM raster (fallback) | Preservar a base vetorial quando há WebGL2 e continuar no Firefox quando não há | MapLibre é primário; sem WebGL2, Leaflet e CSS raster são carregados sob demanda e usam `frontend/public/maps/raster-provider.json`. A atribuição inclui OpenStreetMap e link de correção. Ambos dependem de serviços públicos sem SLA; política/licença e limites estão em `docs/fontes-territoriais.md`. Não migrar para Google Maps nesta demonstração. |
 | SQL explícito com suporte JDBC do Spring para consulta espacial | Deixar filtros/projeção pública visíveis e estudáveis | JPA é alternativa válida, mas acrescentaria mapeamento espacial sem necessidade neste primeiro endpoint; validar escolha no início de P1.1. |
 | npm com lockfile; Maven Wrapper | Registrar resoluções de dependências e execução do build | Versões flutuantes dificultam reproduzir evidências. Wrapper/lockfile ainda não existem; não alegar instalação concluída. |
 | Testcontainers com PostgreSQL/PostGIS; Docker no desenvolvimento/teste | Exercitar o mesmo mecanismo espacial, isolado e repetível | H2 não comprova comportamento PostGIS. Docker é requisito do harness atual, não decisão de deploy nem motivo para adicionar Kubernetes. |
@@ -35,15 +35,15 @@ Sem Redis, broker, SSE, WebSockets, microsserviços ou cluster em P1.1. Escolher
 
 ## 3. Versões e compatibilidade — gate antes de gerar projetos
 
-**Nenhuma versão exata foi fixada nesta Fase 0.** A documentação oficial foi consultada para orientar o gate, mas não foram executados builds de compatibilidade.
+O frontend já possui versões fixadas no lockfile; o backend ainda não possui combinação executável escolhida. As versões registradas abaixo distinguem dependências instaladas de candidatos; documentação de compatibilidade não substitui build/teste.
 
 | Componente | Proposta / estado |
 |---|---|
-| Angular + Angular CLI, Node.js, TypeScript, RxJS | Selecionar uma linha suportada e fixar patches; verificar a combinação na matriz oficial. Não escolher Node/TypeScript independentemente do Angular.[6] |
-| Java + Spring Boot | Java 21 como candidato de estudo, não instalação constatada. A página consultada de Spring Boot 4.1.1 aceita Java de 17 a 26; isso inclui o candidato, mas não congela a versão do projeto.[7] |
-| Maven / Wrapper | Fixar distribuição e conferir a exigência do Boot escolhido; página consultada de Boot 4.1.1 exige Maven 3.6.3 ou superior.[7] |
+| Angular + Angular CLI, Node.js, TypeScript, RxJS | Frontend registrado em `docs/implementacao-2026-10.md` e `frontend/package-lock.json`; não confundir essas versões com decisão de backend. Revalidar a matriz oficial ao atualizar.[6] |
+| Java + Spring Boot | Contrato de implementação registra Spring Boot 3.5.16 e Java 21 em contêiner como proposta; nenhum backend/build foi executado. Revalidar compatibilidade antes de scaffold.[7] |
+| Maven / Wrapper | Maven 3.9.11 é candidato registrado no contrato de implementação; Wrapper e build backend ainda não existem. |
 | PostgreSQL + PostGIS | Versões/patches e imagem ainda a selecionar; verificar suporte conjunto, extensão disponível e registrar tag/digest. Não usar `latest`. |
-| MapLibre, Bootstrap, Sass, Flyway, drivers e testes | Versões não confirmadas; validar integração, suporte PostgreSQL/PostGIS e ferramentas geradas antes de aceitar manifests. |
+| MapLibre 6.11.2 + Leaflet 1.9.4 (`@types/leaflet` 1.9.22); OpenFreeMap Bright primário, OSM raster fallback; Google Maps não selecionado | MapLibre e Leaflet estão instalados e carregados sob demanda. O asset `raster-provider.json` permite substituir URL/zoom/atribuição sem recompilar o JavaScript; tiles reais retornaram HTTP 200 no smoke test Firefox com WebGL2 desativado. Os serviços não oferecem SLA garantido nesta configuração; rever termos, contato e capacidade antes de publicação/escala. A camada territorial é GeoJSON local, independente do provedor. |
 
 Antes do scaffold: inventariar runtimes instalados e Docker (sem instalar ou alterar o sistema sem necessidade/escopo), consultar matrizes vigentes, registrar a combinação exata neste documento, então gerar e executar build/testes. Documentação de compatibilidade não substitui execução. Consulta realizada em 26/09/2026; revalidar ao iniciar P1.1.
 
@@ -72,7 +72,7 @@ GeoJSON utiliza ordem longitude/latitude no sistema WGS 84; a proposta de SRID 4
 
 ## 5. Contrato preliminar P1.1 — somente leitura
 
-**Proposta:** `GET /api/v1/ocorrencias`, sem autenticação no ambiente local de demonstração. Resposta `200`, `Content-Type: application/geo+json`. Seleção no backend: APROVADA + SINTETICA. Nenhum parâmetro permite trocar esse predicado.
+**Contrato legado, não ativo até R0:** `GET /api/v1/ocorrencias`, sem autenticação no ambiente local de demonstração. Resposta `200`, `Content-Type: application/geo+json`. Seleção no backend: APROVADA + SINTETICA. Nenhum parâmetro permite trocar esse predicado. Ele foi escrito para uma demonstração somente de leitura e deve ser reconciliado com o cadastro exclusivo por Operador e moderação da proposta 1.0 antes de implementação.
 
 Exemplo inteiramente fictício do contrato (não resposta executada):
 
@@ -125,13 +125,13 @@ Antes de liberar escrita: testes de 401/403, matriz de perfis, inatividade no li
 
 Evidência local: `app.html:1–46`, `app.scss:1–298`, `styles.scss:1–52` em `docs/referencias/ui/`.
 
-- **Preservar:** marca, tema escuro/tokens, sidebar de 256 px no desktop, mapa em destaque, Bootstrap, CSS MapLibre, foco visível e breakpoints de 760/420 px. Não adicionar biblioteca de tema ou redesenhar navegação.
+- **Preservar:** marca, tema escuro/tokens, sidebar de 256 px no desktop, mapa em destaque, Bootstrap, estilos lazy de MapLibre e Leaflet, foco visível e breakpoints de 760/420 px. Não adicionar biblioteca de tema ou redesenhar navegação.
 - **Completude:** aviso de demonstração, legenda com texto, lista e estados independentes da consulta e do mapa. Carregamento/erro já aparecem no template, mas funções e comportamento não foram fornecidos.
 - **Acessibilidade:** reavaliar `role="application"`; preferir região rotulada e alternativa em lista, link para pular mapa, foco previsível, anúncio de estado e botões rotulados. Testar teclado, leitor de tela e contraste; cor isolada não define severidade. Sem afirmar certificação por inspeção de CSS.
 - **Mobile:** testar alturas mínimas de 360/420/380 px, áreas de rolagem e tela em paisagem, zoom de 200%, controles/legenda/atribuição sem sobreposição; não interpretar media queries como teste já passado.
 - **Manutenção:** substituir novos usos de `::ng-deep` por estilos globais delimitados por classe da área do mapa; Angular desaconselha novos usos desse seletor.[10] Preservar as referências e aplicar ajustes apenas no futuro código.
 - **Dependências visuais:** revisar importação de Bootstrap/Sass conforme as versões escolhidas, sem reduzir/trocar biblioteca antecipadamente; prefixar estilos próprios para evitar colisões como `.nav-link`.
-- **Fontes e mapa-base:** `styles.scss` referencia fontes Google, mas não define provedor de tiles. Avaliar licença, auto-hospedagem/fallback de fontes e exposição de requisições a terceiros. Registrar provedor/estilo, atribuição, limites, custo e indisponibilidade antes de P1.1. Não presumir uso ilimitado de serviço público. Uma opção local/sintética pode evitar dependência externa, sem alegar cartografia real.
+- **Fontes e mapa-base:** `styles.scss` referencia fontes Google; OpenFreeMap/OSM e o fallback raster geram requisições de terceiros. A configuração raster está em `frontend/public/maps/raster-provider.json`; antes de publicação, rever licença/termos, atribuição, política de tiles, contato, limites e disponibilidade. Avaliar auto-hospedagem/fallback das fontes. Não presumir uso ilimitado de serviço público nem alegar cartografia real para uma opção local/sintética.
 
 ## 8. Verificação e limites conhecidos
 
@@ -152,3 +152,5 @@ P0 executa apenas `docs`/`planning`, verificações estruturais: arquivos não v
 [12] https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
 [13] https://www.rfc-editor.org/info/rfc7946
 [14] https://www.postgresql.org/docs/current/datatype-datetime.html
+[15] https://openfreemap.org/quick_start/
+[16] https://openfreemap.org/tos/

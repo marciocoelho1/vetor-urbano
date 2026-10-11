@@ -61,7 +61,19 @@
                 "output": "assets/maplibre"
               }
             ],
-            "styles": ["src/styles.scss"]
+            "styles": [
+              "src/styles.scss",
+              {
+                "input": "node_modules/maplibre-gl/dist/maplibre-gl.css",
+                "bundleName": "maplibre",
+                "inject": false
+              },
+              {
+                "input": "node_modules/leaflet/dist/leaflet.css",
+                "bundleName": "leaflet",
+                "inject": false
+              }
+            ]
           },
           "configurations": {
             "production": {

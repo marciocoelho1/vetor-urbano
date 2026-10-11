@@ -3,6 +3,7 @@ import {
   AfterViewInit,
   Component,
   computed,
+  HostListener,
   inject,
   OnDestroy,
   PLATFORM_ID,
@@ -10,24 +11,281 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type * as maplibregl from 'maplibre-gl';
-import type { FeatureCollection, Point } from 'geojson';
+import type { Feature, FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson';
+import {
+  calendarRange,
+  filterRecords,
+  localDateTimeToInstant,
+  MAXIMUM_RADIUS_METERS,
+  MINIMUM_RADIUS_METERS,
+  RADIUS_STEP_METERS,
+  type AggregateStatistic,
+  type Coordinates,
+  type DatePreset,
+  type DemoRecord,
+  type ImportedDataset,
+  type SourceMetadata,
+} from './domain';
+import type { SpreadsheetSheet } from './xlsx-export';
 
 type Category = 'TRANSITO' | 'SEGURANCA' | 'CONTINGENCIA';
 type ModuleId = 'intelligence' | 'information' | 'territory';
-type DemoPoint = {
+type ViewId = 'map' | 'active' | 'history' | 'insights' | 'sources' | 'report';
+type TerritoryCode = 'CV' | 'TCP' | 'ADA' | 'MIL' | 'LJ' | 'MNI' | 'NEU';
+type TerritoryProperties = { n: string; f: TerritoryCode };
+type TerritoryFeature = Feature<Polygon | MultiPolygon, TerritoryProperties> & { id: number };
+type MapSearchResult =
+  | { kind: 'occurrence'; key: string; title: string; subtitle: string; point: DemoPoint }
+  | { kind: 'territory'; key: string; title: string; subtitle: string; area: TerritoryFeature };
+type DemoPoint = DemoRecord & {
   id: string;
   name: string;
   description: string;
   location: string;
   kind: 'occurrence' | 'poi';
-  category?: Category;
-  group?: string;
-  crime?: string;
-  poiType?: string;
-  occurredAt?: string;
   insertedAt: string;
   coordinates: [number, number];
 };
+
+type SavedSearch = {
+  id: string;
+  name: string;
+  filters: string[];
+  period: string;
+  customRangeStart?: string;
+  customRangeEnd?: string;
+  timeStart?: string;
+  timeEnd?: string;
+  useRadius?: boolean;
+  radiusMeters?: number;
+  center?: { longitude: string; latitude: string };
+};
+type ClipStatus = 'PENDING' | 'LINKED' | 'DUPLICATE' | 'DISMISSED';
+type DemoClip = {
+  id: string;
+  title: string;
+  publisher: string;
+  collectedAt: string;
+  status: ClipStatus;
+  eventId?: string;
+  referenceUrl?: string;
+};
+type SourceCard = {
+  id: string;
+  name: string;
+  url?: string;
+  format: string;
+  state: string;
+  note: string;
+};
+type LeafletMap = import('leaflet').Map;
+type LeafletLayerGroup = import('leaflet').LayerGroup;
+type LeafletCircleMarker = import('leaflet').CircleMarker;
+type RasterTileProvider = { tileUrl: string; maxZoom: number; attribution: string };
+
+type TerritoryGroup = {
+  id: TerritoryCode;
+  label: string;
+  color: string;
+  count: number;
+};
+
+const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/bright';
+const RASTER_MAP_PROVIDER_URL = 'maps/raster-provider.json';
+const TERRITORY_DATA_URL = 'maps/areas-territoriais.geojson';
+const SEARCH_RADIUS_COLOR = '#C4B5FD';
+const CENTRAL_DO_BRASIL_CENTER: Coordinates = [-43.19156448029434, -22.903318808380494];
+const REPORT_VALUE_LABELS: Record<string, string> = {
+  TRANSITO: 'Trânsito',
+  SEGURANCA: 'Segurança',
+  CONTINGENCIA: 'Contingência',
+  POI: 'Ponto de interesse',
+  CRIMES: 'Crimes',
+  CALAMIDADE_PUBLICA: 'Calamidade pública',
+  ASSUNTOS_SEGURANCA: 'Assuntos diversos de segurança',
+  ATIVIDADE_POLICIAL: 'Atividade policial',
+  ORDEM_PUBLICA: 'Ordem pública',
+  ALERTA: 'Alerta',
+  OUTROS_REGISTROS: 'Outros registros',
+  CRITICA: 'Crítica',
+  ALTA: 'Alta',
+  MODERADA: 'Moderada',
+  MEDIA: 'Média',
+  BAIXA: 'Baixa',
+  SINALIZACAO: 'Sinalização',
+  INTERDICAO: 'Interdição',
+  COLISAO: 'Colisão',
+  CONGESTIONAMENTO: 'Congestionamento',
+  PANE: 'Pane',
+  FURTO: 'Furto',
+  ROUBO_TRANSEUNTE: 'Roubo a transeunte',
+  ROUBO_VEICULO: 'Roubo de veículo',
+  FURTO_VEICULO: 'Furto de veículo',
+  ROUBO_COLETIVO: 'Roubo em transporte coletivo',
+  ROUBO_CARGA: 'Roubo de carga',
+  ESTELIONATO: 'Estelionato',
+  AMEACA: 'Ameaça',
+  LESAO_CORPORAL_DOLOSA: 'Lesão corporal dolosa',
+  HOMICIDIO_DOLOSO: 'Homicídio doloso',
+  ALAGAMENTO: 'Alagamento',
+  DESLIZAMENTO: 'Deslizamento',
+  INCENDIO: 'Incêndio',
+  FALHA_INFRAESTRUTURA: 'Falha de infraestrutura',
+  OUTRO: 'Outro',
+  HOSPITAL_PUBLICO: 'Hospital público',
+  HOSPITAL_PARTICULAR: 'Hospital particular',
+  UPA: 'Unidade de Pronto Atendimento (UPA)',
+  AEROPORTO: 'Aeroporto',
+  EMBAIXADA: 'Embaixada ou consulado',
+  ESTADIO: 'Estádio',
+};
+
+function reportValueLabel(value?: string): string {
+  const text = value?.trim() ?? '';
+  if (!text) return '';
+  const key = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
+  return REPORT_VALUE_LABELS[key] ?? text;
+}
+
+const TERRITORY_GROUPS: TerritoryGroup[] = [
+  { id: 'CV', label: 'Comando Vermelho (CV)', color: '#E0342C', count: 1000 },
+  { id: 'TCP', label: 'Terceiro Comando Puro (TCP)', color: '#2FA46B', count: 295 },
+  { id: 'ADA', label: 'Amigos dos Amigos (ADA)', color: '#EDB72B', count: 92 },
+  { id: 'MIL', label: 'Milícia', color: '#4E9DE0', count: 91 },
+  { id: 'LJ', label: 'Liga da Justiça (CL220)', color: '#2B5BC7', count: 130 },
+  { id: 'MNI', label: 'Milícia de Nova Iguaçu', color: '#9B6BD6', count: 42 },
+  { id: 'NEU', label: 'Área classificada como neutra pela fonte', color: '#8C97A3', count: 21 },
+];
+const TERRITORY_GROUP_BY_ID = new Map(TERRITORY_GROUPS.map((group) => [group.id, group]));
+const OPEN_SOURCES: SourceCard[] = [
+  {
+    id: 'isp-rj',
+    name: 'ISP-RJ',
+    url: 'https://www.ispdados.rj.gov.br/estatistica.html',
+    format: 'CSV agregado',
+    state: 'IMPORTAÇÃO MANUAL',
+    note: 'Séries por território e período; não converter totais em pontos individuais.',
+  },
+  {
+    id: 'fogo-cruzado',
+    name: 'Fogo Cruzado',
+    url: 'https://api.fogocruzado.org.br/docs',
+    format: 'API de eventos',
+    state: 'AUTORIZAÇÃO NECESSÁRIA',
+    note: 'A conexão automática não está ativada; credenciais nunca ficam no navegador.',
+  },
+  {
+    id: 'ott',
+    name: 'OTT360',
+    url: 'https://ondetemtiroteio.com/website/ott/index.html',
+    format: 'Feed/API a confirmar',
+    state: 'FORMATO PENDENTE',
+    note: 'Exige autorização, termos de reutilização e contrato de atualização.',
+  },
+  {
+    id: 'cor-rio',
+    name: 'COR-Rio / órgãos municipais',
+    url: 'https://cor.rio/',
+    format: 'Boletim/feed a confirmar',
+    state: 'FORMATO PENDENTE',
+    note: 'Não há conexão com sistemas internos nem confirmação automática de resolução.',
+  },
+  {
+    id: 'clippings',
+    name: 'Publicações e imprensa',
+
+    format: 'Referência revisada',
+    state: 'REVISÃO MANUAL',
+    note: 'Guardar referência e metadados; direitos de texto integral dependem de licença.',
+  },
+];
+const DEMO_AGGREGATES: AggregateStatistic[] = [
+  {
+    territory: 'Centro (exemplo sintético)',
+    period: '2026-07',
+    indicator: 'Trânsito',
+    value: 8,
+    unit: 'registros fictícios',
+    sourceId: 'demo',
+  },
+  {
+    territory: 'Centro (exemplo sintético)',
+    period: '2026-08',
+    indicator: 'Trânsito',
+    value: 11,
+    unit: 'registros fictícios',
+    sourceId: 'demo',
+  },
+  {
+    territory: 'Centro (exemplo sintético)',
+    period: '2026-09',
+    indicator: 'Trânsito',
+    value: 6,
+    unit: 'registros fictícios',
+    sourceId: 'demo',
+  },
+  {
+    territory: 'Zona Sul (exemplo sintético)',
+    period: '2026-07',
+    indicator: 'Segurança',
+    value: 5,
+    unit: 'registros fictícios',
+    sourceId: 'demo',
+  },
+  {
+    territory: 'Zona Sul (exemplo sintético)',
+    period: '2026-08',
+    indicator: 'Segurança',
+    value: 9,
+    unit: 'registros fictícios',
+    sourceId: 'demo',
+  },
+  {
+    territory: 'Zona Sul (exemplo sintético)',
+    period: '2026-09',
+    indicator: 'Segurança',
+    value: 7,
+    unit: 'registros fictícios',
+    sourceId: 'demo',
+  },
+];
+const INITIAL_CLIPS: DemoClip[] = [
+  {
+    id: 'clip-demo-001',
+    title: 'Boletim de teste sobre bloqueio viário',
+    publisher: 'Fonte sintética A',
+    collectedAt: '2026-10-10T12:00:00.000Z',
+    status: 'PENDING',
+  },
+  {
+    id: 'clip-demo-002',
+    title: 'Nota demonstrativa de chuva intensa',
+    publisher: 'Fonte sintética B',
+    collectedAt: '2026-10-10T11:00:00.000Z',
+    status: 'PENDING',
+  },
+  {
+    id: 'clip-demo-003',
+    title: 'Publicação simulada sobre interdição',
+    publisher: 'Fonte sintética C',
+    collectedAt: '2026-10-09T20:00:00.000Z',
+    status: 'LINKED',
+    eventId: 'demo-002',
+  },
+];
+
+function normalizeSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
 
 const CATEGORIES: { id: Category; label: string; icon: string }[] = [
   { id: 'TRANSITO', label: 'Trânsito', icon: '↗' },
@@ -43,20 +301,99 @@ const CATEGORIES: { id: Category; label: string; icon: string }[] = [
 })
 export class App implements AfterViewInit, OnDestroy {
   protected readonly categories = CATEGORIES;
-  protected readonly activeView = signal<'map' | 'report'>('map');
+  protected readonly territoryGroups = TERRITORY_GROUPS;
+  protected readonly activeView = signal<ViewId>('map');
   protected readonly expandedModule = signal<ModuleId | null>('intelligence');
   protected readonly selectedCategory = signal<Category | null>(null);
   protected readonly activeFilters = signal<string[]>(['category:TRANSITO']);
-  protected readonly period = signal('1m');
+  protected readonly period = signal<DatePreset | 'custom'>('1m');
+  protected readonly queryReferenceDate = signal(new Date());
+  protected readonly customRangeStart = signal('');
+  protected readonly customRangeEnd = signal('');
+  protected readonly timeStart = signal('');
+  protected readonly timeEnd = signal('');
+  protected readonly useRadius = signal(false);
+  protected readonly radiusMeters = signal(MINIMUM_RADIUS_METERS);
+  protected readonly searchCenter = signal({
+    longitude: String(CENTRAL_DO_BRASIL_CENTER[0]),
+    latitude: String(CENTRAL_DO_BRASIL_CENTER[1]),
+  });
+  protected readonly mapPickPurpose = signal<'report' | 'radius' | null>(null);
+  protected readonly savedSearches = signal<SavedSearch[]>([]);
+  protected readonly savedSearchName = signal('');
+  protected readonly historyQuery = signal('');
+  protected readonly analyticsTerritoryA = signal('Centro (exemplo sintético)');
+  protected readonly analyticsTerritoryB = signal('Zona Sul (exemplo sintético)');
+  protected readonly analyticsIndicator = signal('Trânsito');
+  protected readonly comparisonPeriodA = signal('2026-07');
+  protected readonly comparisonPeriodB = signal('2026-08');
+  protected readonly playbackIndex = signal(0);
+  protected readonly playbackRunning = signal(false);
+  protected readonly sourceKind = signal<'events-geojson' | 'aggregate-csv'>('aggregate-csv');
+  protected readonly sourceMetadataForm = signal<SourceMetadata>({
+    id: 'arquivo-local',
+    name: '',
+    url: '',
+    license: '',
+    referenceDate: '',
+    limitations: '',
+  });
+  protected readonly sourceImportStatus = signal('');
+  protected readonly sourceImports = signal<
+    { metadata: SourceMetadata; importedAt: string; records: number; aggregates: number }[]
+  >([]);
+  protected readonly importedRecords = signal<DemoPoint[]>([]);
+  protected readonly importedAggregates = signal<AggregateStatistic[]>([]);
+  protected readonly clips = signal<DemoClip[]>(INITIAL_CLIPS);
+  protected readonly clipTarget = signal<Record<string, string>>({});
+  protected readonly clipsQuery = signal('');
+  protected readonly clipDraft = signal({ title: '', publisher: '', referenceUrl: '' });
+  protected readonly sourceCards = OPEN_SOURCES;
+  protected readonly aggregateData = computed(() =>
+    this.importedAggregates().length ? this.importedAggregates() : DEMO_AGGREGATES,
+  );
+  protected readonly exportStatus = signal('');
   protected readonly heatmap = signal(false);
   protected readonly mapError = signal(false);
+  protected readonly mapErrorDetails = signal('');
   protected readonly mapReady = signal(false);
+  protected readonly filtersCollapsed = signal(false);
+  protected readonly mapExpanded = signal(false);
+  protected readonly selectedPointId = signal<string | null>(null);
+  protected readonly expandedResultDetailIds = signal<string[]>([]);
+  protected readonly selectedTerritoryId = signal<number | null>(null);
+  protected readonly searchQuery = signal('');
+  protected readonly territories = signal<TerritoryFeature[]>([]);
+  protected readonly territoryStatus = signal<'idle' | 'loading' | 'loaded' | 'error'>('idle');
   protected readonly reportStatus = signal('');
+  protected readonly categoryChangeNotice = signal('');
   protected readonly pointConfirmed = signal(false);
-  protected readonly coordinates = signal({ longitude: '-43.1729', latitude: '-22.9068' });
+  protected readonly reportMapStatus = signal<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  protected readonly reportMapErrorDetails = signal('');
+  protected readonly coordinates = signal({ longitude: '', latitude: '' });
   protected readonly reportFields = signal<Record<string, string>>({});
   private readonly platformId = inject(PLATFORM_ID);
   private map?: maplibregl.Map;
+  private leaflet?: typeof import('leaflet');
+  private leafletLibrariesPromise?: Promise<typeof import('leaflet')>;
+  private rasterTileProvider?: RasterTileProvider;
+  private rasterTileProviderPromise?: Promise<RasterTileProvider>;
+  private fallbackMap?: LeafletMap;
+  private fallbackPointsLayer?: LeafletLayerGroup;
+  private fallbackEventHeatLayer?: LeafletLayerGroup;
+  private fallbackPoiHeatLayer?: LeafletLayerGroup;
+  private fallbackRadiusLayer?: LeafletLayerGroup;
+  private fallbackTerritoryLayer?: LeafletLayerGroup;
+  private reportMap?: maplibregl.Map;
+  private reportMapMarker?: maplibregl.Marker;
+  private reportFallbackMap?: LeafletMap;
+  private reportFallbackMarker?: LeafletCircleMarker;
+  private reportMapInitPromise?: Promise<void>;
+  private maplibre?: typeof import('maplibre-gl');
+  private mapLibrariesPromise?: Promise<typeof import('maplibre-gl')>;
+  private radiusCircleFactory?: typeof import('./radius-geometry').createRadiusCircle;
+  private territoryLoadPromise?: Promise<void>;
+  private playbackTimer?: ReturnType<typeof setInterval>;
 
   private readonly demoPoints: DemoPoint[] = [
     {
@@ -67,8 +404,12 @@ export class App implements AfterViewInit, OnDestroy {
       kind: 'occurrence',
       category: 'TRANSITO',
       group: 'OUTROS_REGISTROS',
+      typeLabel: 'Sinalização',
+      severity: 'BAIXA',
+      operationalStatus: 'RESOLVED',
       occurredAt: this.hoursAgo(3),
       insertedAt: this.hoursAgo(2),
+      sourceId: 'demo',
       coordinates: [-43.1812, -22.9035],
     },
     {
@@ -79,8 +420,14 @@ export class App implements AfterViewInit, OnDestroy {
       kind: 'occurrence',
       category: 'TRANSITO',
       group: 'ALERTA',
+      typeLabel: 'Interdição',
+      severity: 'MODERADA',
+      operationalStatus: 'ACTIVE',
+      lastCheckedAt: this.hoursAgo(1),
+      expiresAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
       occurredAt: this.hoursAgo(16),
       insertedAt: this.hoursAgo(15),
+      sourceId: 'demo',
       coordinates: [-43.1748, -22.9194],
     },
     {
@@ -92,8 +439,12 @@ export class App implements AfterViewInit, OnDestroy {
       category: 'SEGURANCA',
       group: 'CRIMES',
       crime: 'FURTO',
+      typeLabel: 'Furto',
+      severity: 'BAIXA',
+      operationalStatus: 'RESOLVED',
       occurredAt: this.hoursAgo(31),
       insertedAt: this.hoursAgo(28),
+      sourceId: 'demo',
       coordinates: [-43.1817, -22.9264],
     },
     {
@@ -104,8 +455,14 @@ export class App implements AfterViewInit, OnDestroy {
       kind: 'occurrence',
       category: 'CONTINGENCIA',
       group: 'CALAMIDADE_PUBLICA',
+      typeLabel: 'Alagamento',
+      severity: 'MODERADA',
+      operationalStatus: 'EXPIRED',
+      lastCheckedAt: this.hoursAgo(36),
+      expiresAt: this.hoursAgo(24),
       occurredAt: this.hoursAgo(52),
       insertedAt: this.hoursAgo(50),
+      sourceId: 'demo',
       coordinates: [-43.2032, -22.9097],
     },
     {
@@ -115,7 +472,10 @@ export class App implements AfterViewInit, OnDestroy {
       location: 'Lapa, Rio de Janeiro',
       kind: 'poi',
       poiType: 'HOSPITAL_PUBLICO',
+      typeLabel: 'Hospital público',
+      exclusive: false,
       insertedAt: this.hoursAgo(24),
+      sourceId: 'demo',
       coordinates: [-43.1794, -22.9128],
     },
     {
@@ -125,50 +485,231 @@ export class App implements AfterViewInit, OnDestroy {
       location: 'Saúde, Rio de Janeiro',
       kind: 'poi',
       poiType: 'ESTADIO',
+      typeLabel: 'Estádio',
+      exclusive: false,
       insertedAt: this.hoursAgo(24),
+      sourceId: 'demo',
       coordinates: [-43.196, -22.895],
     },
   ];
 
+  protected readonly allPoints = computed(() => {
+    const now = this.queryReferenceDate().getTime();
+    return [...this.demoPoints, ...this.importedRecords()].map((point) =>
+      (point.operationalStatus === 'ACTIVE' || point.operationalStatus === 'MONITORING') &&
+      point.expiresAt &&
+      Date.parse(point.expiresAt) <= now
+        ? { ...point, operationalStatus: 'EXPIRED' as const }
+        : point,
+    );
+  });
+  protected readonly resolvedDateRange = computed(() => {
+    const selectedPeriod = this.period();
+    if (selectedPeriod !== 'custom')
+      return calendarRange(selectedPeriod, this.queryReferenceDate());
+    if (!this.customRangeStart() || !this.customRangeEnd()) return null;
+    try {
+      const start = localDateTimeToInstant(this.customRangeStart());
+      const end = localDateTimeToInstant(this.customRangeEnd());
+      return start < end ? { start, end } : null;
+    } catch {
+      return null;
+    }
+  });
+  protected readonly customRangeInvalid = computed(
+    () => this.period() === 'custom' && this.resolvedDateRange() === null,
+  );
+  protected readonly radiusInvalid = computed(() => {
+    if (!this.useRadius()) return false;
+    const center = this.searchCenter();
+    const longitude = Number(center.longitude);
+    const latitude = Number(center.latitude);
+    return (
+      !Number.isFinite(longitude) ||
+      !Number.isFinite(latitude) ||
+      longitude < -180 ||
+      longitude > 180 ||
+      latitude < -90 ||
+      latitude > 90 ||
+      !Number.isFinite(this.radiusMeters()) ||
+      this.radiusMeters() < MINIMUM_RADIUS_METERS ||
+      this.radiusMeters() > MAXIMUM_RADIUS_METERS
+    );
+  });
   protected readonly visiblePoints = computed(() => {
+    if (this.customRangeInvalid() || this.radiusInvalid()) return [];
     const filters = this.activeFilters();
-    const periodStart = Date.now() - this.periodDuration();
-    const selectedGroups = filters
-      .filter((filter) => filter.startsWith('group:'))
-      .map((filter) => filter.slice(6));
-    const selectedCategories = filters
+    const categories = filters
       .filter((filter) => filter.startsWith('category:'))
-      .map((filter) => filter.slice(9));
-    const selectedPois = filters
-      .filter((filter) => filter.startsWith('poi:'))
-      .map((filter) => filter.slice(4));
-    const advancedCrimes = filters
+      .map((filter) => filter.slice('category:'.length));
+    const groups = filters
+      .filter((filter) => filter.startsWith('group:'))
+      .map((filter) => filter.slice('group:'.length));
+    const crimes = filters
       .filter((filter) => filter.startsWith('crime:'))
-      .map((filter) => filter.slice(6));
-
-    return this.demoPoints.filter((point) => {
-      if (point.kind === 'occurrence') {
-        const categoryMatch = !!point.category && selectedCategories.includes(point.category);
-        const groupMatch = !!point.group && selectedGroups.includes(point.group);
-        if (!categoryMatch && !groupMatch) return false;
-        if (point.occurredAt && Date.parse(point.occurredAt) < periodStart) return false;
-        if (
-          groupMatch &&
-          selectedGroups.includes('CRIMES') &&
-          advancedCrimes.length &&
-          point.crime &&
-          !advancedCrimes.includes(point.crime)
-        ) {
-          return false;
-        }
-        return true;
-      }
-      return selectedPois.includes(point.poiType ?? '') || selectedPois.includes('EXCLUSIVO');
+      .map((filter) => filter.slice('crime:'.length));
+    const poiTypes = filters
+      .filter((filter) => filter.startsWith('poi:') && filter !== 'poi:EXCLUSIVO')
+      .map((filter) => filter.slice('poi:'.length));
+    const range = this.resolvedDateRange();
+    const center = this.searchCenter();
+    return filterRecords(this.allPoints(), {
+      categories,
+      groups,
+      crimes,
+      poiTypes,
+      exclusivePois: filters.includes('poi:EXCLUSIVO'),
+      start: range?.start,
+      end: range?.end,
+      timeStart: this.timeStart() || undefined,
+      timeEnd: this.timeEnd() || undefined,
+      center: this.useRadius() ? [Number(center.longitude), Number(center.latitude)] : undefined,
+      radiusMeters: this.useRadius() ? this.radiusMeters() : undefined,
     });
   });
+  protected readonly historyRecords = computed(() =>
+    this.allPoints()
+      .filter((point) => point.kind === 'occurrence')
+      .filter((point) => {
+        const query = normalizeSearch(this.historyQuery());
+        return (
+          !query ||
+          normalizeSearch(
+            `${point.name} ${point.description} ${point.location} ${point.sourceId}`,
+          ).includes(query)
+        );
+      })
+      .sort(
+        (left, right) => Date.parse(right.occurredAt ?? '') - Date.parse(left.occurredAt ?? ''),
+      ),
+  );
+  protected readonly activeRecords = computed(() =>
+    this.historyRecords().filter(
+      (point) => point.operationalStatus === 'ACTIVE' || point.operationalStatus === 'MONITORING',
+    ),
+  );
+  protected readonly selectedDetail = computed(
+    () => this.allPoints().find((point) => point.id === this.selectedPointId()) ?? null,
+  );
+  protected readonly visibleOpenResultDetailCount = computed(() => {
+    const expanded = new Set(this.expandedResultDetailIds());
+    return this.visiblePoints().filter((point) => expanded.has(point.id)).length;
+  });
+  protected readonly categoryMetrics = computed(() => {
+    const occurrences = this.visiblePoints().filter((point) => point.kind === 'occurrence');
+    const counts = this.categories.map((category) => ({
+      id: category.id,
+      label: category.label,
+      count: occurrences.filter((point) => point.category === category.id).length,
+    }));
+    const maximum = Math.max(1, ...counts.map((entry) => entry.count));
+    return counts.map((entry) => ({ ...entry, width: `${(entry.count / maximum) * 100}%` }));
+  });
+  protected readonly aggregateIndicators = computed(() => [
+    ...new Set(this.aggregateData().map((item) => item.indicator)),
+  ]);
+  protected readonly aggregateTerritories = computed(() => [
+    ...new Set(this.aggregateData().map((item) => item.territory)),
+  ]);
+  protected readonly aggregatePeriods = computed(() =>
+    [...new Set(this.aggregateData().map((item) => item.period))].sort(),
+  );
+  protected readonly monthlyMetrics = computed(() => {
+    const grouped = new Map<
+      string,
+      { territory: string; period: string; indicator: string; unit: string; value: number }
+    >();
+    for (const aggregate of this.aggregateData()) {
+      const key = `${aggregate.territory}|${aggregate.indicator}|${aggregate.unit}|${aggregate.period}`;
+      const current = grouped.get(key);
+      grouped.set(key, {
+        territory: aggregate.territory,
+        period: aggregate.period,
+        indicator: aggregate.indicator,
+        unit: aggregate.unit,
+        value: (current?.value ?? 0) + aggregate.value,
+      });
+    }
+    const values = [...grouped.values()].sort((left, right) =>
+      left.period.localeCompare(right.period),
+    );
+    const maxima = new Map<string, number>();
+    for (const item of values) {
+      const key = `${item.indicator}|${item.unit}`;
+      maxima.set(key, Math.max(maxima.get(key) ?? 0, item.value));
+    }
+    return values.map((item) => ({
+      ...item,
+      width: `${(item.value / (maxima.get(`${item.indicator}|${item.unit}`) ?? 1)) * 100}%`,
+    }));
+  });
+  protected readonly comparisonMetrics = computed(() => {
+    const dataA = this.aggregateData().filter(
+      (item) =>
+        item.territory === this.analyticsTerritoryA() &&
+        item.period === this.comparisonPeriodA() &&
+        item.indicator === this.analyticsIndicator(),
+    );
+    const dataB = this.aggregateData().filter(
+      (item) =>
+        item.territory === this.analyticsTerritoryB() &&
+        item.period === this.comparisonPeriodB() &&
+        item.indicator === this.analyticsIndicator(),
+    );
+    const unitA = [...new Set(dataA.map((item) => item.unit))];
+    const unitB = [...new Set(dataB.map((item) => item.unit))];
+    const comparable = unitA.length === 1 && unitB.length === 1 && unitA[0] === unitB[0];
+    const a = comparable ? dataA.reduce((total, item) => total + item.value, 0) : null;
+    const b = comparable ? dataB.reduce((total, item) => total + item.value, 0) : null;
+    return {
+      a,
+      b,
+      unit: comparable ? unitA[0] : null,
+      difference: a !== null && b !== null ? b - a : null,
+      relativeDifference: a !== null && b !== null && a !== 0 ? ((b - a) / a) * 100 : null,
+      comparable,
+    };
+  });
+  protected readonly playbackRecords = computed(() => this.historyRecords());
+  protected readonly currentPlaybackRecord = computed(
+    () => this.playbackRecords()[this.playbackIndex()] ?? null,
+  );
+  protected readonly visibleClips = computed(() => {
+    const query = normalizeSearch(this.clipsQuery());
+    return this.clips().filter(
+      (clip) => !query || normalizeSearch(`${clip.title} ${clip.publisher}`).includes(query),
+    );
+  });
+  protected readonly pendingClipCount = computed(
+    () => this.clips().filter((clip) => clip.status === 'PENDING').length,
+  );
+  protected readonly isDemonstrationOnly = computed(
+    () => !this.sourceImports().some((item) => item.records > 0 || item.aggregates > 0),
+  );
+  protected readonly sourcesFreshness = computed(() => {
+    const imported = this.sourceImports().at(-1);
+    return imported
+      ? `Último arquivo recebido: ${this.formatDateTime(imported.importedAt)}`
+      : 'Nenhum arquivo externo foi importado nesta sessão.';
+  });
+
+  protected readonly searchResults = computed(() =>
+    this.collectSearchResults(this.searchQuery()).slice(0, 8),
+  );
+  protected readonly searchResultTotal = computed(
+    () => this.collectSearchResults(this.searchQuery()).length,
+  );
+  protected readonly searchHasMore = computed(
+    () => this.searchResultTotal() > this.searchResults().length,
+  );
 
   protected readonly territorySelected = computed(() =>
     this.activeFilters().some((filter) => filter.startsWith('territory:')),
+  );
+  protected readonly selectedTerritoryCount = computed(() =>
+    TERRITORY_GROUPS.filter((group) =>
+      this.activeFilters().includes(`territory:${group.id}`),
+    ).reduce((count, group) => count + group.count, 0),
   );
 
   protected readonly eventCount = computed(
@@ -176,17 +717,234 @@ export class App implements AfterViewInit, OnDestroy {
   );
 
   ngAfterViewInit(): void {
-    if (isPlatformBrowser(this.platformId)) void this.initializeMap();
+    if (!isPlatformBrowser(this.platformId)) return;
+    try {
+      this.filtersCollapsed.set(localStorage.getItem('vu.filtersCollapsed') === 'true');
+      const saved = JSON.parse(localStorage.getItem('vu.savedSearches') ?? '[]') as SavedSearch[];
+      if (Array.isArray(saved)) this.savedSearches.set(saved);
+      const clips = JSON.parse(localStorage.getItem('vu.demoClips') ?? 'null') as DemoClip[] | null;
+      if (Array.isArray(clips)) this.clips.set(clips);
+    } catch {
+      this.filtersCollapsed.set(false);
+    }
+    void this.initializeMap();
   }
 
   ngOnDestroy(): void {
+    if (this.playbackTimer) clearInterval(this.playbackTimer);
+    this.reportMapMarker?.remove();
+    this.reportMap?.remove();
+    this.reportFallbackMarker?.remove();
+    this.reportFallbackMap?.remove();
     this.map?.remove();
+    this.fallbackMap?.remove();
   }
 
-  protected openView(view: 'map' | 'report'): void {
+  protected openView(view: ViewId): void {
     this.activeView.set(view);
+    this.mapExpanded.set(false);
     this.reportStatus.set('');
-    if (view === 'map') requestAnimationFrame(() => this.map?.resize());
+    if (view !== 'map') {
+      this.map?.remove();
+      this.map = undefined;
+      this.fallbackMap?.remove();
+      this.fallbackMap = undefined;
+      this.fallbackPointsLayer = undefined;
+      this.fallbackEventHeatLayer = undefined;
+      this.fallbackPoiHeatLayer = undefined;
+      this.fallbackRadiusLayer = undefined;
+      this.fallbackTerritoryLayer = undefined;
+      this.mapReady.set(false);
+      this.mapError.set(false);
+      this.mapErrorDetails.set('');
+    }
+    requestAnimationFrame(() => {
+      if (view === 'map') {
+        const container = document.getElementById('map-canvas');
+        if (container && this.map?.getContainer?.() === container) this.map.resize();
+        else if (container && this.fallbackMap?.getContainer() === container) {
+          this.fallbackMap.invalidateSize();
+        } else if (container) void this.initializeMap();
+      }
+      if (view === 'report' && this.selectedCategory()) void this.initializeReportMap();
+      if (view !== 'report') this.disposeReportMap();
+      document.querySelector<HTMLElement>(`[data-view-title="${view}"]`)?.focus();
+    });
+  }
+
+  protected toggleFilters(): void {
+    this.filtersCollapsed.update((collapsed) => !collapsed);
+    try {
+      localStorage.setItem('vu.filtersCollapsed', String(this.filtersCollapsed()));
+    } catch {
+      // The preference remains usable for this session if storage is unavailable.
+    }
+    requestAnimationFrame(() => {
+      this.map?.resize();
+      this.fallbackMap?.invalidateSize();
+    });
+  }
+
+  protected toggleMapExpanded(): void {
+    this.mapExpanded.update((expanded) => !expanded);
+    requestAnimationFrame(() => {
+      this.map?.resize();
+      this.fallbackMap?.invalidateSize();
+      if (this.mapExpanded()) {
+        document.querySelector<HTMLElement>('.map-expand-toggle')?.focus();
+      }
+    });
+  }
+
+  @HostListener('document:keydown.escape')
+  protected closeExpandedMapOnEscape(): void {
+    if (!this.mapExpanded()) return;
+    this.mapExpanded.set(false);
+    requestAnimationFrame(() => {
+      this.map?.resize();
+      this.fallbackMap?.invalidateSize();
+    });
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  protected containExpandedMapFocus(event: KeyboardEvent): void {
+    if (!this.mapExpanded() || event.key !== 'Tab') return;
+    const frame = document.querySelector<HTMLElement>('.map-frame.map-expanded');
+    const focusable = frame?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable?.length) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    if (
+      event.shiftKey &&
+      (document.activeElement === first || !frame?.contains(document.activeElement))
+    ) {
+      event.preventDefault();
+      last.focus();
+    } else if (
+      !event.shiftKey &&
+      (document.activeElement === last || !frame?.contains(document.activeElement))
+    ) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  protected setSearchQuery(query: string): void {
+    this.searchQuery.set(query);
+    const normalized = normalizeSearch(query);
+    const occurrenceMatch = this.visiblePoints().some((point) =>
+      normalizeSearch(`${point.name} ${point.location} ${point.description}`).includes(normalized),
+    );
+    if (
+      normalized.length >= 2 &&
+      !occurrenceMatch &&
+      this.territoryStatus() !== 'loaded' &&
+      this.territoryStatus() !== 'loading'
+    ) {
+      void this.loadTerritories();
+    }
+  }
+
+  protected setHistorySearch(query: string): void {
+    this.historyQuery.set(query);
+  }
+
+  protected setSavedSearchName(name: string): void {
+    this.savedSearchName.set(name);
+  }
+
+  protected setAnalyticsIndicator(indicator: string): void {
+    if (this.aggregateIndicators().includes(indicator)) this.analyticsIndicator.set(indicator);
+  }
+
+  protected setAnalyticsTerritory(side: 'a' | 'b', territory: string): void {
+    if (!this.aggregateTerritories().includes(territory)) return;
+    if (side === 'a') this.analyticsTerritoryA.set(territory);
+    else this.analyticsTerritoryB.set(territory);
+  }
+
+  protected setComparisonPeriod(side: 'a' | 'b', period: string): void {
+    if (!this.aggregatePeriods().includes(period)) return;
+    if (side === 'a') this.comparisonPeriodA.set(period);
+    else this.comparisonPeriodB.set(period);
+  }
+
+  protected selectMapSearchResult(result: MapSearchResult): void {
+    if (result.kind === 'occurrence') this.focusPoint(result.point);
+    else this.focusTerritory(result.area);
+    this.searchQuery.set('');
+  }
+
+  protected focusPoint(point: DemoPoint): void {
+    this.selectedPointId.set(point.id);
+    this.map?.flyTo({ center: point.coordinates, zoom: 14.5 });
+    this.fallbackMap?.flyTo([point.coordinates[1], point.coordinates[0]], 14.5);
+    this.refreshMapData();
+  }
+
+  protected showDetails(point: DemoPoint): void {
+    this.selectedPointId.set(point.id);
+  }
+
+  protected isResultDetailOpen(pointId: string): boolean {
+    return this.expandedResultDetailIds().includes(pointId);
+  }
+
+  protected toggleResultDetails(pointId: string): void {
+    const expanded = this.expandedResultDetailIds();
+    if (expanded.includes(pointId)) {
+      this.expandedResultDetailIds.set(expanded.filter((id) => id !== pointId));
+      return;
+    }
+    if (this.visibleOpenResultDetailCount() >= 5) return;
+    this.expandedResultDetailIds.set([...expanded, pointId]);
+  }
+
+  protected closeDetails(): void {
+    this.selectedPointId.set(null);
+    this.refreshMapData();
+  }
+
+  protected cancelMapPick(): void {
+    this.mapPickPurpose.set(null);
+  }
+
+  protected retryMap(): void {
+    this.map?.remove();
+    this.map = undefined;
+    this.fallbackMap?.remove();
+    this.fallbackMap = undefined;
+    this.fallbackPointsLayer = undefined;
+    this.fallbackEventHeatLayer = undefined;
+    this.fallbackPoiHeatLayer = undefined;
+    this.fallbackRadiusLayer = undefined;
+    this.fallbackTerritoryLayer = undefined;
+    this.mapReady.set(false);
+    this.mapError.set(false);
+    this.mapErrorDetails.set('');
+    void this.initializeMap();
+  }
+
+  protected focusTerritory(area: TerritoryFeature): void {
+    const filter = `territory:${area.properties.f}`;
+    if (!this.activeFilters().includes(filter)) {
+      this.activeFilters.update((filters) => [...filters, filter]);
+    }
+    this.selectTerritoryHighlight(area.id);
+    this.applyTerritoryFilter();
+    this.map?.fitBounds(this.getTerritoryBounds(area), { maxZoom: 15, padding: 56 });
+    if (this.fallbackMap && this.leaflet) {
+      this.fallbackMap.fitBounds(this.leaflet.geoJSON(area).getBounds(), {
+        maxZoom: 15,
+        padding: [36, 36],
+      });
+    }
+  }
+
+  protected retryTerritories(): void {
+    void this.loadTerritories();
   }
 
   protected toggleModule(module: ModuleId): void {
@@ -198,6 +956,10 @@ export class App implements AfterViewInit, OnDestroy {
       filters.includes(filter) ? filters.filter((item) => item !== filter) : [...filters, filter],
     );
     this.refreshMapData();
+    if (filter.startsWith('territory:')) {
+      this.applyTerritoryFilter();
+      if (this.activeFilters().includes(filter)) void this.loadTerritories();
+    }
   }
 
   protected isFilterActive(filter: string): boolean {
@@ -205,8 +967,143 @@ export class App implements AfterViewInit, OnDestroy {
   }
 
   protected selectPeriod(period: string): void {
-    this.period.set(period);
+    const available = ['1w', '1m', '3m', '6m', '1y', 'custom'];
+    if (!available.includes(period)) return;
+    this.period.set(period as DatePreset | 'custom');
     this.refreshMapData();
+  }
+
+  protected setCustomRange(axis: 'start' | 'end', value: string): void {
+    if (axis === 'start') this.customRangeStart.set(value);
+    else this.customRangeEnd.set(value);
+    this.period.set('custom');
+    this.refreshMapData();
+  }
+
+  protected setTimeRange(axis: 'start' | 'end', value: string): void {
+    if (axis === 'start') this.timeStart.set(value);
+    else this.timeEnd.set(value);
+    this.refreshMapData();
+  }
+
+  protected refreshLocalQuery(): void {
+    this.queryReferenceDate.set(new Date());
+    this.refreshMapData();
+  }
+
+  protected setRadiusMeters(value: string): void {
+    const radius = Number(value);
+    this.radiusMeters.set(
+      Number.isFinite(radius)
+        ? Math.min(
+            MAXIMUM_RADIUS_METERS,
+            MINIMUM_RADIUS_METERS +
+              Math.round((radius - MINIMUM_RADIUS_METERS) / RADIUS_STEP_METERS) *
+                RADIUS_STEP_METERS,
+          )
+        : Number.NaN,
+    );
+    this.refreshMapData();
+  }
+
+  protected adjustRadiusWithWheel(event: WheelEvent): void {
+    if (!this.useRadius() || event.deltaY === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const next =
+      this.radiusMeters() + (event.deltaY < 0 ? RADIUS_STEP_METERS : -RADIUS_STEP_METERS);
+    this.setRadiusMeters(
+      String(Math.max(MINIMUM_RADIUS_METERS, Math.min(MAXIMUM_RADIUS_METERS, next))),
+    );
+  }
+
+  protected toggleRadius(enabled: boolean): void {
+    this.useRadius.set(enabled);
+    this.refreshMapData();
+  }
+
+  protected setSearchCoordinate(axis: 'longitude' | 'latitude', value: string): void {
+    this.searchCenter.update((center) => ({ ...center, [axis]: value }));
+    this.refreshMapData();
+  }
+
+  protected beginMapPick(purpose: 'report' | 'radius'): void {
+    this.mapPickPurpose.set(purpose);
+    if (purpose === 'report') this.activeView.set('map');
+    requestAnimationFrame(() => {
+      this.map?.resize();
+      this.fallbackMap?.invalidateSize();
+    });
+  }
+
+  protected acceptMapPick(longitude: number, latitude: number): void {
+    const purpose = this.mapPickPurpose();
+    if (!purpose) return;
+    if (purpose === 'report') {
+      this.coordinates.set({ longitude: String(longitude), latitude: String(latitude) });
+      this.pointConfirmed.set(true);
+      this.reportStatus.set('Ponto escolhido no mapa e confirmado para esta demonstração.');
+      this.activeView.set('report');
+    } else {
+      this.searchCenter.set({ longitude: String(longitude), latitude: String(latitude) });
+      this.useRadius.set(true);
+    }
+    this.mapPickPurpose.set(null);
+    this.refreshMapData();
+  }
+
+  protected saveCurrentSearch(): void {
+    const name = this.savedSearchName().trim();
+    if (!name) return;
+    const saved: SavedSearch = {
+      id: `search-${Date.now()}`,
+      name,
+      filters: [...this.activeFilters()],
+      period: this.period(),
+      customRangeStart: this.customRangeStart(),
+      customRangeEnd: this.customRangeEnd(),
+      timeStart: this.timeStart(),
+      timeEnd: this.timeEnd(),
+      useRadius: this.useRadius(),
+      radiusMeters: this.radiusMeters(),
+      center: { ...this.searchCenter() },
+    };
+    const searches = [...this.savedSearches(), saved];
+    this.savedSearches.set(searches);
+    this.savedSearchName.set('');
+    this.persistLocalValue('vu.savedSearches', searches);
+  }
+
+  protected applySavedSearch(search: SavedSearch): void {
+    this.activeFilters.set([...new Set(search.filters)]);
+    this.period.set(search.period as DatePreset | 'custom');
+    this.customRangeStart.set(search.customRangeStart ?? '');
+    this.customRangeEnd.set(search.customRangeEnd ?? '');
+    this.timeStart.set(search.timeStart ?? '');
+    this.timeEnd.set(search.timeEnd ?? '');
+    this.useRadius.set(search.useRadius ?? false);
+    this.radiusMeters.set(search.radiusMeters ?? 1000);
+    this.searchCenter.set(
+      search.center ?? {
+        longitude: String(CENTRAL_DO_BRASIL_CENTER[0]),
+        latitude: String(CENTRAL_DO_BRASIL_CENTER[1]),
+      },
+    );
+    this.refreshMapData();
+  }
+
+  protected removeSavedSearch(id: string): void {
+    const searches = this.savedSearches().filter((search) => search.id !== id);
+    this.savedSearches.set(searches);
+    this.persistLocalValue('vu.savedSearches', searches);
+  }
+
+  private persistLocalValue(key: string, value: unknown): void {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      this.exportStatus.set('O navegador não permitiu salvar esta preferência localmente.');
+    }
   }
 
   protected toggleHeatmap(): void {
@@ -216,18 +1113,42 @@ export class App implements AfterViewInit, OnDestroy {
 
   protected chooseCategory(category: Category): void {
     this.selectedCategory.set(category);
-    this.reportFields.set({});
+    const commonFieldNames = ['nome', 'descricao', 'local', 'ocorridoEm', 'severidade'];
+    let clearedCategoryFields = false;
+    this.reportFields.update((fields) =>
+      Object.fromEntries(
+        Object.entries(fields).filter(([name]) => {
+          const isCommonField = commonFieldNames.includes(name);
+          if (!isCommonField) clearedCategoryFields = true;
+          return isCommonField;
+        }),
+      ),
+    );
+    this.categoryChangeNotice.set(
+      clearedCategoryFields
+        ? 'Os campos específicos da categoria anterior foram limpos; os dados comuns foram preservados.'
+        : '',
+    );
     this.reportStatus.set('');
-    this.pointConfirmed.set(false);
+    if (this.activeView() === 'report') {
+      requestAnimationFrame(() => void this.initializeReportMap());
+    }
   }
 
   protected setField(name: string, value: string): void {
     this.reportFields.update((fields) => ({ ...fields, [name]: value }));
+    if (name === 'grupo' && value !== 'CRIMES') {
+      this.reportFields.update((fields) => {
+        const { tipoCrime: _discarded, ...remaining } = fields;
+        return remaining;
+      });
+    }
   }
 
   protected setCoordinate(axis: 'longitude' | 'latitude', value: string): void {
     this.coordinates.update((point) => ({ ...point, [axis]: value }));
     this.pointConfirmed.set(false);
+    this.updateReportMapMarker();
   }
 
   protected confirmPoint(): void {
@@ -258,58 +1179,661 @@ export class App implements AfterViewInit, OnDestroy {
       this.reportStatus.set('Escolha uma categoria para continuar.');
       return;
     }
+    const fields = this.reportFields();
+    if ((fields['nome'] ?? '').trim().length < 3 || (fields['local'] ?? '').trim().length < 3) {
+      this.reportStatus.set('Informe título e local de referência com pelo menos 3 caracteres.');
+      return;
+    }
+    if (!fields['ocorridoEm']) {
+      this.reportStatus.set('Informe quando o fato ocorreu.');
+      return;
+    }
+    try {
+      if (localDateTimeToInstant(fields['ocorridoEm']) > new Date()) {
+        this.reportStatus.set('A data e hora do fato não podem estar no futuro.');
+        return;
+      }
+    } catch {
+      this.reportStatus.set('Informe uma data e hora válidas.');
+      return;
+    }
     if (!this.pointConfirmed()) {
       this.reportStatus.set('Confirme as coordenadas antes de continuar.');
       return;
     }
-    this.reportStatus.set(
-      'Cadastro indisponível: a API e a aprovação por operador ainda não foram conectadas. Nenhum dado foi enviado.',
-    );
+    this.reportStatus.set('Cadastro indisponível nesta demonstração. Nenhum dado foi enviado.');
+  }
+
+  protected currentBrazilLocalDateTime(): string {
+    return new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .format(new Date())
+      .replace(' ', 'T');
   }
 
   protected formatTime(iso: string): string {
-    return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(
-      new Date(iso),
+    return new Intl.DateTimeFormat('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    }).format(new Date(iso));
+  }
+
+  protected formatDateTime(iso: string): string {
+    return new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: 'America/Sao_Paulo',
+    }).format(new Date(iso));
+  }
+
+  protected statusLabel(status?: string): string {
+    const labels: Record<string, string> = {
+      ACTIVE: 'Ativo',
+      MONITORING: 'Em acompanhamento',
+      RESOLVED: 'Resolvido',
+      EXPIRED: 'Expirado sem confirmação',
+    };
+    return labels[status ?? ''] ?? 'Sem estado operacional informado';
+  }
+
+  protected recordTypeLabel(record: DemoPoint): string {
+    return (
+      record.typeLabel ?? record.crime ?? record.group ?? record.poiType ?? 'Tipo não informado'
     );
   }
 
+  protected markerCode(record: DemoPoint): string {
+    const codes: Record<string, string> = {
+      SINALIZACAO: 'S',
+      INTERDICAO: 'I',
+      COLISAO: '×',
+      CONGESTIONAMENTO: 'C',
+      PANE: 'P',
+      FURTO: 'F',
+      ALAGAMENTO: 'A',
+      DESLIZAMENTO: 'D',
+      INCENDIO: 'I',
+      HOSPITAL_PUBLICO: 'H',
+      HOSPITAL_PARTICULAR: 'H',
+      UPA: 'U',
+      AEROPORTO: '✈',
+      ESTADIO: 'E',
+    };
+    const key = normalizeSearch(this.recordTypeLabel(record)).toUpperCase().replaceAll(' ', '_');
+    return codes[key] ?? (record.kind === 'poi' ? 'P' : (record.category?.slice(0, 1) ?? '•'));
+  }
+
+  protected async importSourceFile(file?: File): Promise<void> {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      this.sourceImportStatus.set(
+        'Arquivo maior que 10 MB. Divida a importação antes de continuar.',
+      );
+      return;
+    }
+    const form = this.sourceMetadataForm();
+    const metadata: SourceMetadata = {
+      ...form,
+      id: `${normalizeSearch(form.name).replace(/[^a-z0-9]+/g, '-') || 'fonte'}-${Date.now()}`,
+    };
+    try {
+      const { parseOpenDataset } = await import('./source-import');
+      const dataset = parseOpenDataset(this.sourceKind(), await file.text(), metadata);
+      this.applyImportedDataset(dataset);
+      this.sourceImportStatus.set(
+        `Arquivo recebido nesta sessão: ${dataset.records.length} evento(s) pontual(is), ${dataset.aggregates.length} estatística(s) agregada(s).`,
+      );
+    } catch (error) {
+      this.sourceImportStatus.set(
+        error instanceof Error ? error.message : 'Não foi possível ler o arquivo selecionado.',
+      );
+    }
+  }
+
+  protected setSourceField(field: Exclude<keyof SourceMetadata, 'id'>, value: string): void {
+    this.sourceMetadataForm.update((metadata) => ({ ...metadata, [field]: value }));
+  }
+
+  protected setSourceKind(kind: string): void {
+    if (kind !== 'events-geojson' && kind !== 'aggregate-csv') return;
+    this.sourceKind.set(kind);
+    this.sourceImportStatus.set('');
+  }
+
+  protected handleSourceFile(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    void this.importSourceFile(input.files?.[0]);
+    input.value = '';
+  }
+
+  private applyImportedDataset(dataset: ImportedDataset): void {
+    const importedAt = new Date().toISOString();
+    const points = dataset.records.map((record) => ({
+      ...record,
+      id: `${dataset.source.id}:${record.id}`,
+      kind: 'occurrence' as const,
+      name: record.name ?? 'Evento sem título',
+      description: record.description ?? '',
+      location: record.location ?? 'Local não informado',
+      insertedAt: importedAt,
+      typeLabel:
+        record.typeLabel ?? record.crime ?? record.group ?? 'Evento importado; tipo pendente',
+    }));
+    this.importedRecords.update((current) => {
+      const knownIds = new Set(current.map((record) => record.id));
+      return [...current, ...points.filter((record) => !knownIds.has(record.id))];
+    });
+    this.importedAggregates.update((current) => [...current, ...dataset.aggregates]);
+    this.sourceImports.update((current) => [
+      ...current,
+      {
+        metadata: dataset.source,
+        importedAt,
+        records: dataset.records.length,
+        aggregates: dataset.aggregates.length,
+      },
+    ]);
+    if (dataset.aggregates.length) {
+      if (!dataset.aggregates.some((item) => item.indicator === this.analyticsIndicator())) {
+        this.analyticsIndicator.set(dataset.aggregates[0]!.indicator);
+      }
+      const importedTerritories = [...new Set(dataset.aggregates.map((item) => item.territory))];
+      if (importedTerritories[0]) this.analyticsTerritoryA.set(importedTerritories[0]);
+      if (importedTerritories[1]) this.analyticsTerritoryB.set(importedTerritories[1]);
+      const importedPeriods = [...new Set(dataset.aggregates.map((item) => item.period))].sort();
+      if (importedPeriods[0]) this.comparisonPeriodA.set(importedPeriods[0]);
+      if (importedPeriods[1]) this.comparisonPeriodB.set(importedPeriods[1]);
+    }
+    this.refreshMapData();
+  }
+
+  protected setClipSearch(query: string): void {
+    this.clipsQuery.set(query);
+  }
+
+  protected setClipDraftField(field: keyof ReturnType<typeof this.clipDraft>, value: string): void {
+    this.clipDraft.update((draft) => ({ ...draft, [field]: value }));
+  }
+
+  protected addClipReference(): void {
+    const draft = this.clipDraft();
+    let url: URL;
+    try {
+      url = new URL(draft.referenceUrl);
+    } catch {
+      this.sourceImportStatus.set('Informe uma URL pública válida para a referência.');
+      return;
+    }
+    if (
+      (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+      !draft.title.trim() ||
+      !draft.publisher.trim()
+    ) {
+      this.sourceImportStatus.set('Informe título, publicação e URL HTTP/HTTPS.');
+      return;
+    }
+    const clips = [
+      {
+        id: `clip-${Date.now()}`,
+        title: draft.title.trim(),
+        publisher: draft.publisher.trim(),
+        referenceUrl: url.href,
+        collectedAt: new Date().toISOString(),
+        status: 'PENDING' as const,
+      },
+      ...this.clips(),
+    ];
+    this.clips.set(clips);
+    this.persistLocalValue('vu.demoClips', clips);
+    this.clipDraft.set({ title: '', publisher: '', referenceUrl: '' });
+    this.sourceImportStatus.set(
+      'Referência adicionada à triagem local; nenhum conteúdo foi baixado.',
+    );
+  }
+
+  protected clearImportedSources(): void {
+    this.importedRecords.set([]);
+    this.importedAggregates.set([]);
+    this.sourceImports.set([]);
+    this.sourceImportStatus.set('Dados importados removidos desta sessão.');
+    this.refreshMapData();
+  }
+
+  protected setClipTarget(clipId: string, eventId: string): void {
+    this.clipTarget.update((targets) => ({ ...targets, [clipId]: eventId }));
+  }
+
+  protected linkClip(clipId: string): void {
+    const eventId = this.clipTarget()[clipId];
+    if (!eventId || !this.historyRecords().some((record) => record.id === eventId)) return;
+    this.updateClip(clipId, 'LINKED', eventId);
+  }
+
+  protected markClipDuplicate(clipId: string): void {
+    this.updateClip(clipId, 'DUPLICATE');
+  }
+
+  protected dismissClip(clipId: string): void {
+    this.updateClip(clipId, 'DISMISSED');
+  }
+
+  private updateClip(clipId: string, status: ClipStatus, eventId?: string): void {
+    const clips = this.clips().map((clip) =>
+      clip.id === clipId ? { ...clip, status, ...(eventId ? { eventId } : {}) } : clip,
+    );
+    this.clips.set(clips);
+    this.persistLocalValue('vu.demoClips', clips);
+  }
+
+  protected startPlayback(): void {
+    if (this.playbackRunning()) {
+      this.stopPlayback();
+      return;
+    }
+    if (!this.playbackRecords().length) return;
+    if (this.playbackIndex() >= this.playbackRecords().length - 1) this.playbackIndex.set(0);
+    this.playbackRunning.set(true);
+    this.playbackTimer = setInterval(() => {
+      const nextIndex = this.playbackIndex() + 1;
+      if (nextIndex >= this.playbackRecords().length) {
+        this.stopPlayback();
+        return;
+      }
+      this.playbackIndex.set(nextIndex);
+      const record = this.currentPlaybackRecord();
+      if (record) this.focusPoint(record);
+    }, 1400);
+  }
+
+  protected stopPlayback(): void {
+    if (this.playbackTimer) clearInterval(this.playbackTimer);
+    this.playbackTimer = undefined;
+    this.playbackRunning.set(false);
+  }
+
+  protected setPlaybackIndex(value: string): void {
+    this.stopPlayback();
+    const index = Math.max(0, Math.min(this.playbackRecords().length - 1, Number(value)));
+    this.playbackIndex.set(Number.isFinite(index) ? index : 0);
+    const record = this.currentPlaybackRecord();
+    if (record) this.focusPoint(record);
+  }
+
+  protected saveCurrentSearchFromInsights(): void {
+    const name = this.savedSearchName().trim();
+    if (!name) {
+      this.exportStatus.set('Digite um nome para salvar este filtro.');
+      return;
+    }
+    this.saveCurrentSearch();
+    this.exportStatus.set('Filtro salvo neste navegador.');
+  }
+
+  protected async exportXlsx(): Promise<void> {
+    try {
+      const sheets = this.buildReportSheets();
+      const { createXlsxWorkbook } = await import('./xlsx-export');
+      const workbook = await createXlsxWorkbook(sheets);
+      const workbookBuffer = new ArrayBuffer(workbook.byteLength);
+      new Uint8Array(workbookBuffer).set(workbook);
+      const file = new Blob([workbookBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(file);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `vetor-urbano-relatorio-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+      this.exportStatus.set('Planilha XLSX gerada com filtros, registros, estatísticas e fontes.');
+    } catch {
+      this.exportStatus.set('Não foi possível gerar a planilha. Tente novamente.');
+    }
+  }
+
+  private buildReportSheets(): SpreadsheetSheet[] {
+    const range = this.resolvedDateRange();
+    const filteredPoints = this.visiblePoints();
+    const sources = [
+      ...this.sourceImports().map((entry) => entry.metadata),
+      {
+        id: 'demo',
+        name: 'Dados sintéticos locais',
+        url: 'Não se aplica — fixture do protótipo',
+        license: 'Demonstração própria',
+        referenceDate: '2026-10',
+        limitations: 'Não representa eventos reais; não usar para decisões de segurança.',
+      },
+    ];
+    const sourceNames = new Map(sources.map((source) => [source.id, source.name]));
+    const sourceName = (sourceId?: string): string =>
+      sourceNames.get(sourceId ?? 'demo') ??
+      (sourceId ? `Fonte sem cadastro (${sourceId})` : 'Fonte não informada');
+    const formatDate = (value?: string): string =>
+      value ? this.formatReportDateTime(value) : 'Não informado';
+    const center = this.searchCenter();
+    return [
+      {
+        name: 'Resumo e filtros',
+        rows: [
+          ['Relatório Vetor Urbano — demonstração local'],
+          ['Gerado em (horário de Brasília)', this.formatDateTime(new Date().toISOString())],
+          ['Quantidade de registros no recorte', filteredPoints.length],
+          [
+            'Início do período (horário de Brasília)',
+            range ? this.formatDateTime(range.start.toISOString()) : 'Não definido',
+          ],
+          [
+            'Fim do período (exclusivo; horário de Brasília)',
+            range ? this.formatDateTime(range.end.toISOString()) : 'Não definido',
+          ],
+          ['Filtros aplicados', this.reportFilterSummary()],
+          ['Horário inicial do dia', this.timeStart() || 'Não definido'],
+          ['Horário final do dia', this.timeEnd() || 'Não definido'],
+          ['Filtro por raio', this.useRadius() ? 'Ativado' : 'Desativado'],
+          ['Raio de busca (m)', this.useRadius() ? this.radiusMeters() : 'Não se aplica'],
+          [
+            'Longitude do centro da busca (WGS84)',
+            this.useRadius() ? Number(center.longitude) : '',
+          ],
+          ['Latitude do centro da busca (WGS84)', this.useRadius() ? Number(center.latitude) : ''],
+          [
+            'Observação',
+            'Dados fictícios ou arquivos importados localmente; sem validação operacional.',
+          ],
+        ],
+        titleRows: 1,
+        headerRows: 0,
+        labelColumns: [0],
+        columnWidths: [40, 58],
+        autoFilter: false,
+      },
+      {
+        name: 'Registros e pontos',
+        rows: [
+          [
+            'ID do registro',
+            'Título do registro',
+            'Categoria',
+            'Grupo',
+            'Tipo de informação',
+            'Gravidade informada',
+            'Situação operacional',
+            'Data e hora do fato (horário de Brasília)',
+            'Data de inclusão (horário de Brasília)',
+            'Local de referência',
+            'Longitude (WGS84)',
+            'Latitude (WGS84)',
+            'Fonte de dados',
+          ],
+          ...filteredPoints.map((point) => [
+            point.id,
+            point.name,
+            point.category ? reportValueLabel(point.category) : 'Ponto de interesse',
+            point.group ? reportValueLabel(point.group) : 'Não informado',
+            reportValueLabel(this.recordTypeLabel(point)),
+            point.severity ? reportValueLabel(point.severity) : 'Não informada',
+            point.kind === 'poi' ? 'Não se aplica' : this.statusLabel(point.operationalStatus),
+            point.occurredAt ? formatDate(point.occurredAt) : 'Não se aplica',
+            formatDate(point.insertedAt),
+            point.location,
+            point.coordinates[0],
+            point.coordinates[1],
+            sourceName(point.sourceId),
+          ]),
+        ],
+        columnWidths: [18, 30, 16, 28, 30, 24, 30, 32, 32, 32, 20, 20, 30],
+      },
+      {
+        name: 'Estatísticas agregadas',
+        rows: [
+          [
+            'Território de referência',
+            'Período de referência (MM/AAAA)',
+            'Indicador',
+            'Valor',
+            'Unidade',
+            'Fonte de dados',
+          ],
+          ...this.aggregateData().map((item) => [
+            item.territory,
+            this.formatReportPeriod(item.period),
+            reportValueLabel(item.indicator),
+            item.value,
+            reportValueLabel(item.unit),
+            sourceName(item.sourceId),
+          ]),
+        ],
+        columnWidths: [32, 28, 28, 16, 18, 30],
+      },
+      {
+        name: 'Fontes e limites',
+        rows: [
+          [
+            'Nome da fonte',
+            'Referência ou endereço',
+            'Licença ou autorização',
+            'Data de referência',
+            'Limitações declaradas',
+          ],
+          ...sources.map((source) => [
+            source.name,
+            source.url,
+            source.license,
+            this.formatReportPeriod(source.referenceDate),
+            source.limitations,
+          ]),
+        ],
+        columnWidths: [30, 48, 34, 18, 56],
+      },
+    ];
+  }
+
+  private reportFilterSummary(): string {
+    return (
+      this.activeFilters()
+        .map((filter) => {
+          const separator = filter.indexOf(':');
+          if (separator < 0) return reportValueLabel(filter);
+          const kind = filter.slice(0, separator);
+          const value = filter.slice(separator + 1);
+          if (kind === 'category') return `Categoria: ${reportValueLabel(value)}`;
+          if (kind === 'group') return `Grupo: ${reportValueLabel(value)}`;
+          if (kind === 'crime') return `Tipo de crime: ${reportValueLabel(value)}`;
+          if (kind === 'poi') {
+            return value === 'EXCLUSIVO'
+              ? 'Pontos de interesse exclusivos'
+              : `Tipo de ponto de interesse: ${reportValueLabel(value)}`;
+          }
+          if (kind === 'territory') {
+            return `Área territorial: ${TERRITORY_GROUP_BY_ID.get(value as TerritoryCode)?.label ?? value}`;
+          }
+          if (kind === 'status') return `Situação operacional: ${this.statusLabel(value)}`;
+          return `${reportValueLabel(kind)}: ${reportValueLabel(value)}`;
+        })
+        .join(' · ') || 'Nenhum filtro aplicado'
+    );
+  }
+
+  private formatReportDateTime(value: string): string {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : this.formatDateTime(date.toISOString());
+  }
+
+  private formatReportPeriod(value: string): string {
+    const month = /^(\d{4})-(\d{2})$/.exec(value);
+    if (month) return `${month[2]}/${month[1]}`;
+    const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (date) return `${date[3]}/${date[2]}/${date[1]}`;
+    return value || 'Não informado';
+  }
+
+  private loadMapLibraries(): Promise<typeof import('maplibre-gl')> {
+    if (this.maplibre) return Promise.resolve(this.maplibre);
+    if (!this.mapLibrariesPromise) {
+      this.mapLibrariesPromise = Promise.all([
+        import('maplibre-gl'),
+        import('./radius-geometry'),
+        import('./maplibre-style-loader').then(({ loadMapLibreStyles }) => loadMapLibreStyles()),
+      ])
+        .then(([maplibre, radiusGeometry]) => {
+          this.maplibre = maplibre;
+          this.radiusCircleFactory = radiusGeometry.createRadiusCircle;
+          maplibre.setWorkerUrl(
+            new URL('assets/maplibre/maplibre-gl-worker.mjs', document.baseURI).href,
+          );
+          return maplibre;
+        })
+        .catch((error: unknown) => {
+          this.mapLibrariesPromise = undefined;
+          throw error;
+        });
+    }
+    return this.mapLibrariesPromise;
+  }
+
+  private loadLeafletLibraries(): Promise<typeof import('leaflet')> {
+    if (this.leaflet) return Promise.resolve(this.leaflet);
+    if (!this.leafletLibrariesPromise) {
+      this.leafletLibrariesPromise = Promise.all([
+        import('leaflet/dist/leaflet-src.esm.js'),
+        import('./leaflet-style-loader').then(({ loadLeafletStyles }) => loadLeafletStyles()),
+      ])
+        .then(([leaflet]) => {
+          this.leaflet = leaflet;
+          return leaflet;
+        })
+        .catch((error: unknown) => {
+          this.leafletLibrariesPromise = undefined;
+          throw error;
+        });
+    }
+    return this.leafletLibrariesPromise;
+  }
+
+  private loadRasterTileProvider(): Promise<RasterTileProvider> {
+    if (this.rasterTileProvider) return Promise.resolve(this.rasterTileProvider);
+    if (!this.rasterTileProviderPromise) {
+      this.rasterTileProviderPromise = fetch(new URL(RASTER_MAP_PROVIDER_URL, document.baseURI))
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(
+              `Não foi possível carregar a configuração do mapa 2D (${response.status}).`,
+            );
+          }
+          const provider = (await response.json()) as Partial<RasterTileProvider>;
+          if (
+            typeof provider.tileUrl !== 'string' ||
+            !provider.tileUrl.startsWith('https://') ||
+            !provider.tileUrl.includes('{z}') ||
+            !provider.tileUrl.includes('{x}') ||
+            !provider.tileUrl.includes('{y}') ||
+            !Number.isInteger(provider.maxZoom) ||
+            provider.maxZoom! < 1 ||
+            provider.maxZoom! > 22 ||
+            typeof provider.attribution !== 'string' ||
+            !provider.attribution.trim()
+          ) {
+            throw new Error('A configuração do mapa 2D é inválida.');
+          }
+          const validProvider: RasterTileProvider = {
+            tileUrl: provider.tileUrl,
+            maxZoom: provider.maxZoom!,
+            attribution: provider.attribution,
+          };
+          this.rasterTileProvider = validProvider;
+          return validProvider;
+        })
+        .catch((error: unknown) => {
+          this.rasterTileProviderPromise = undefined;
+          throw error;
+        });
+    }
+    return this.rasterTileProviderPromise;
+  }
+
   private async initializeMap(): Promise<void> {
-    if (typeof window === 'undefined' || !window.WebGLRenderingContext) {
+    this.mapReady.set(false);
+    this.mapError.set(false);
+    this.mapErrorDetails.set('');
+    if (typeof window === 'undefined') {
+      this.mapErrorDetails.set('O mapa requer um navegador com suporte a DOM.');
       this.mapError.set(true);
       return;
     }
+    if (!this.supportsWebGL2()) {
+      this.mapErrorDetails.set('WebGL2 indisponível; carregando mapa 2D de compatibilidade.');
+      await this.initializeLeafletMap();
+      return;
+    }
     try {
-      const maplibregl = await import('maplibre-gl');
-      maplibregl.setWorkerUrl(
-        new URL('assets/maplibre/maplibre-gl-worker.mjs', document.baseURI).href,
-      );
-      this.map = new maplibregl.Map({
+      const maplibre = await this.loadMapLibraries();
+      if (this.activeView() !== 'map' || !document.getElementById('map-canvas')) return;
+      this.map = new maplibre.Map({
         container: 'map-canvas',
-        style: {
-          version: 8,
-          sources: {
-            osm: {
-              type: 'raster',
-              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-              tileSize: 256,
-              attribution:
-                '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
-            },
-          },
-          layers: [
-            { id: 'osm-base', type: 'raster', source: 'osm', paint: { 'raster-opacity': 0.82 } },
-          ],
-        },
-        center: [-43.19, -22.91],
+        style: MAP_STYLE_URL,
+        center: CENTRAL_DO_BRASIL_CENTER,
         zoom: 12.2,
         minZoom: 9,
         maxZoom: 17,
-        attributionControl: { compact: false },
+        attributionControl: {
+          compact: false,
+          customAttribution: [
+            '<a href="https://openfreemap.org/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a>',
+            '<a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer">© OpenMapTiles</a>',
+            '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>',
+            '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">© Natural Earth</a>',
+          ].join(' · '),
+        },
       });
-      this.map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+      this.map.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
+      this.map.on('error', (event) => {
+        this.mapErrorDetails.set(this.describeMapError(event.error));
+        this.mapError.set(true);
+      });
+      this.map.on('idle', () => this.mapReady.set(true));
+      this.map.on('click', (event) => {
+        const purpose = this.mapPickPurpose();
+        if (purpose) this.acceptMapPick(event.lngLat.lng, event.lngLat.lat);
+      });
       this.map.on('load', () => {
-        this.mapReady.set(true);
+        this.map?.addSource('search-radius-source', {
+          type: 'geojson',
+          data: this.radiusGeoJson(),
+        });
         this.map?.addSource('demo-points', { type: 'geojson', data: this.toGeoJson() });
+        this.map?.addSource('heat-occurrences', {
+          type: 'geojson',
+          data: this.toGeoJson('occurrence'),
+        });
+        this.map?.addSource('heat-pois', { type: 'geojson', data: this.toGeoJson('poi') });
+        this.map?.addLayer({
+          id: 'search-radius-fill',
+          type: 'fill',
+          source: 'search-radius-source',
+          paint: {
+            'fill-color': SEARCH_RADIUS_COLOR,
+            'fill-opacity': 0.18,
+          },
+        });
+        this.map?.addLayer({
+          id: 'search-radius-outline',
+          type: 'line',
+          source: 'search-radius-source',
+          paint: {
+            'line-color': SEARCH_RADIUS_COLOR,
+            'line-opacity': 0.82,
+            'line-width': 2,
+          },
+        });
         this.map?.addLayer({
           id: 'demo-points-glow',
           type: 'circle',
@@ -326,7 +1850,12 @@ export class App implements AfterViewInit, OnDestroy {
           type: 'circle',
           source: 'demo-points',
           paint: {
-            'circle-radius': 5,
+            'circle-radius': [
+              'case',
+              ['==', ['get', 'selected'], true],
+              9,
+              ['match', ['get', 'severity'], 'CRITICA', 8, 'ALTA', 7, 'MODERADA', 6, 5],
+            ],
             'circle-color': [
               'match',
               ['get', 'category'],
@@ -342,6 +1871,23 @@ export class App implements AfterViewInit, OnDestroy {
             'circle-stroke-width': 1.5,
           },
         });
+        this.map?.addLayer({
+          id: 'demo-points-code',
+          type: 'symbol',
+          source: 'demo-points',
+          layout: {
+            'text-field': ['get', 'markerCode'],
+            'text-font': ['Noto Sans Regular'],
+            'text-size': 9,
+            'text-allow-overlap': true,
+            'text-ignore-placement': true,
+          },
+          paint: {
+            'text-color': '#071711',
+            'text-halo-color': '#f4f4f5',
+            'text-halo-width': 0.5,
+          },
+        });
         this.map?.on('click', 'demo-points-dot', (event) => {
           const properties = event.features?.[0]?.properties as Record<string, string> | undefined;
           if (!properties || !this.map) return;
@@ -353,10 +1899,16 @@ export class App implements AfterViewInit, OnDestroy {
           description.textContent = properties['description'] ?? '';
           const location = document.createElement('span');
           location.textContent = properties['location'] ?? '';
+          const type = document.createElement('span');
+          type.textContent = `${properties['typeLabel'] ?? properties['kind'] ?? 'Tipo não informado'} · ${properties['severity'] ?? 'severidade não informada'}`;
+          const status = document.createElement('span');
+          status.textContent = this.statusLabel(properties['operationalStatus']);
+          const source = document.createElement('small');
+          source.textContent = `Fonte: ${properties['sourceId'] ?? 'demonstração local'}`;
           const inserted = document.createElement('small');
           inserted.textContent = `Inserido às ${this.formatTime(properties['insertedAt'] ?? new Date().toISOString())}`;
-          content.append(title, description, location, inserted);
-          new maplibregl.Popup({ closeButton: true, offset: 12 })
+          content.append(title, description, location, type, status, source, inserted);
+          new maplibre.Popup({ closeButton: true, offset: 12 })
             .setLngLat(event.lngLat)
             .setDOMContent(content)
             .addTo(this.map);
@@ -367,87 +1919,859 @@ export class App implements AfterViewInit, OnDestroy {
         this.map?.on('mouseleave', 'demo-points-dot', () => {
           if (this.map) this.map.getCanvas().style.cursor = '';
         });
+        this.installTerritoryLayer();
         this.updateMapLayers();
       });
-    } catch {
+    } catch (error: unknown) {
+      this.mapErrorDetails.set(this.describeMapError(error));
       this.mapError.set(true);
     }
   }
 
-  private refreshMapData(): void {
-    const source = this.map?.getSource('demo-points') as maplibregl.GeoJSONSource | undefined;
-    source?.setData(this.toGeoJson());
-  }
+  private async initializeLeafletMap(): Promise<void> {
+    try {
+      const [leaflet, tileProvider] = await Promise.all([
+        this.loadLeafletLibraries(),
+        this.loadRasterTileProvider(),
+      ]);
+      const container = document.getElementById('map-canvas');
+      if (!container || this.activeView() !== 'map') return;
 
-  private updateMapLayers(): void {
-    const source = this.map?.getSource('demo-points') as maplibregl.GeoJSONSource | undefined;
-    if (!source) return;
-    source.setData(this.toGeoJson());
-    if (this.heatmap() && this.map?.getLayer('demo-points-dot')) {
-      this.map.setLayoutProperty('demo-points-dot', 'visibility', 'none');
-      this.map.setLayoutProperty('demo-points-glow', 'visibility', 'none');
-      if (!this.map.getLayer('demo-heatmap')) {
-        this.map.addLayer({
-          id: 'demo-heatmap',
-          type: 'heatmap',
-          source: 'demo-points',
-          paint: {
-            'heatmap-weight': 1,
-            'heatmap-intensity': 0.8,
-            'heatmap-radius': 36,
-            'heatmap-opacity': 0.78,
-            'heatmap-color': [
-              'interpolate',
-              ['linear'],
-              ['heatmap-density'],
-              0,
-              'rgba(16,185,129,0)',
-              0.25,
-              '#34d399',
-              0.55,
-              '#facc15',
-              1,
-              '#f87171',
-            ],
-          },
-        });
-      } else this.map.setLayoutProperty('demo-heatmap', 'visibility', 'visible');
-    } else if (this.map?.getLayer('demo-points-dot')) {
-      this.map.setLayoutProperty('demo-points-dot', 'visibility', 'visible');
-      this.map.setLayoutProperty('demo-points-glow', 'visibility', 'visible');
-      if (this.map.getLayer('demo-heatmap'))
-        this.map.setLayoutProperty('demo-heatmap', 'visibility', 'none');
+      const [longitude, latitude] = CENTRAL_DO_BRASIL_CENTER;
+      const map = leaflet
+        .map(container, {
+          center: [latitude, longitude],
+          zoom: 12.2,
+          minZoom: 9,
+          maxZoom: 19,
+          preferCanvas: this.supportsCanvas2D(),
+          zoomControl: false,
+        })
+        .setView([latitude, longitude], 12.2);
+      this.fallbackMap = map;
+      leaflet.control.zoom({ position: 'topright' }).addTo(map);
+      this.fallbackPointsLayer = leaflet.layerGroup().addTo(map);
+      this.fallbackEventHeatLayer = leaflet.layerGroup();
+      this.fallbackPoiHeatLayer = leaflet.layerGroup();
+      this.fallbackRadiusLayer = leaflet.layerGroup().addTo(map);
+      this.fallbackTerritoryLayer = leaflet.layerGroup().addTo(map);
+
+      leaflet
+        .tileLayer(tileProvider.tileUrl, {
+          maxZoom: tileProvider.maxZoom,
+          attribution: tileProvider.attribution,
+        })
+        .on('load', () => {
+          if (this.fallbackMap !== map) return;
+          this.mapReady.set(true);
+          this.mapError.set(false);
+          this.mapErrorDetails.set('');
+        })
+        .on('tileerror', (event) => {
+          if (this.fallbackMap !== map || this.mapReady()) return;
+          this.mapErrorDetails.set(this.describeMapError(event.error));
+          this.mapError.set(true);
+        })
+        .addTo(map);
+
+      map.on('click', (event) => {
+        const purpose = this.mapPickPurpose();
+        if (purpose) this.acceptMapPick(event.latlng.lng, event.latlng.lat);
+      });
+      map.whenReady(() => {
+        if (this.fallbackMap !== map) return;
+        requestAnimationFrame(() => map.invalidateSize());
+        this.updateFallbackMapLayers();
+        this.installTerritoryLayer();
+      });
+      this.updateFallbackMapLayers();
+      this.installTerritoryLayer();
+    } catch (error: unknown) {
+      this.mapReady.set(false);
+      this.mapErrorDetails.set(this.describeMapError(error));
+      this.mapError.set(true);
     }
   }
 
-  private toGeoJson(): FeatureCollection<Point> {
+  private initializeReportMap(): Promise<void> {
+    const container = document.getElementById('report-map-canvas');
+    if (!container || this.activeView() !== 'report' || !this.selectedCategory()) {
+      return Promise.resolve();
+    }
+    if (this.reportMap?.getContainer() === container) {
+      this.reportMap.resize();
+      this.updateReportMapMarker();
+      return Promise.resolve();
+    }
+    if (this.reportFallbackMap?.getContainer() === container) {
+      this.reportFallbackMap.invalidateSize();
+      this.updateReportMapMarker();
+      return Promise.resolve();
+    }
+    if (this.reportMapInitPromise) return this.reportMapInitPromise;
+
+    this.reportMapStatus.set('loading');
+    this.reportMapErrorDetails.set('');
+    const initialization = this.createReportMap(container).finally(() => {
+      if (this.reportMapInitPromise === initialization) this.reportMapInitPromise = undefined;
+    });
+    this.reportMapInitPromise = initialization;
+    return initialization;
+  }
+
+  private async createReportMap(container: HTMLElement): Promise<void> {
+    if (!this.supportsWebGL2()) {
+      await this.createReportLeafletMap(container);
+      return;
+    }
+    try {
+      const maplibre = await this.loadMapLibraries();
+      if (
+        !container.isConnected ||
+        document.getElementById('report-map-canvas') !== container ||
+        this.activeView() !== 'report'
+      ) {
+        return;
+      }
+
+      const reportMap = new maplibre.Map({
+        container,
+        style: MAP_STYLE_URL,
+        center: CENTRAL_DO_BRASIL_CENTER,
+        zoom: 13,
+        minZoom: 9,
+        maxZoom: 18,
+        attributionControl: {
+          compact: true,
+          customAttribution: [
+            '<a href="https://openfreemap.org/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a>',
+            '<a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer">© OpenMapTiles</a>',
+            '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>',
+          ].join(' · '),
+        },
+      });
+      this.reportMap = reportMap;
+      reportMap.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
+
+      let idle = false;
+      reportMap.on('load', () => {
+        if (this.reportMap !== reportMap) return;
+        this.updateReportMapMarker();
+      });
+      reportMap.on('idle', () => {
+        idle = true;
+        if (this.reportMap === reportMap) {
+          this.reportMapErrorDetails.set('');
+          this.reportMapStatus.set('ready');
+        }
+      });
+      reportMap.on('error', () => {
+        if (!idle && this.reportMap === reportMap) {
+          this.reportMapStatus.set('error');
+          this.reportMapErrorDetails.set(
+            'O MapLibre reportou uma falha ao carregar estilo ou tiles.',
+          );
+        }
+      });
+      reportMap.on('click', (event) => {
+        this.setCoordinate('longitude', event.lngLat.lng.toFixed(6));
+        this.setCoordinate('latitude', event.lngLat.lat.toFixed(6));
+        this.reportStatus.set(
+          'Coordenadas preenchidas pelo mapa. Confirme o ponto antes de prosseguir.',
+        );
+      });
+    } catch (error: unknown) {
+      this.reportMapStatus.set('error');
+      this.reportMapErrorDetails.set(this.describeMapError(error));
+    }
+  }
+
+  private async createReportLeafletMap(container: HTMLElement): Promise<void> {
+    try {
+      const [leaflet, tileProvider] = await Promise.all([
+        this.loadLeafletLibraries(),
+        this.loadRasterTileProvider(),
+      ]);
+      if (
+        !container.isConnected ||
+        document.getElementById('report-map-canvas') !== container ||
+        this.activeView() !== 'report'
+      ) {
+        return;
+      }
+
+      const [longitude, latitude] = CENTRAL_DO_BRASIL_CENTER;
+      const map = leaflet
+        .map(container, {
+          center: [latitude, longitude],
+          zoom: 13,
+          minZoom: 9,
+          maxZoom: 18,
+          preferCanvas: this.supportsCanvas2D(),
+          zoomControl: false,
+        })
+        .setView([latitude, longitude], 13);
+      this.reportFallbackMap = map;
+      leaflet.control.zoom({ position: 'topright' }).addTo(map);
+      leaflet
+        .tileLayer(tileProvider.tileUrl, {
+          maxZoom: tileProvider.maxZoom,
+          attribution: tileProvider.attribution,
+        })
+        .on('load', () => {
+          if (this.reportFallbackMap !== map) return;
+          this.reportMapErrorDetails.set('');
+          this.reportMapStatus.set('ready');
+        })
+        .on('tileerror', (event) => {
+          if (this.reportFallbackMap !== map || this.reportMapStatus() === 'ready') return;
+          this.reportMapErrorDetails.set(this.describeMapError(event.error));
+          this.reportMapStatus.set('error');
+        })
+        .addTo(map);
+      map.on('click', (event) => {
+        this.setCoordinate('longitude', event.latlng.lng.toFixed(6));
+        this.setCoordinate('latitude', event.latlng.lat.toFixed(6));
+        this.reportStatus.set(
+          'Coordenadas preenchidas pelo mapa. Confirme o ponto antes de prosseguir.',
+        );
+      });
+      map.whenReady(() => {
+        if (this.reportFallbackMap !== map) return;
+        requestAnimationFrame(() => map.invalidateSize());
+        this.updateReportMapMarker();
+      });
+    } catch (error: unknown) {
+      this.reportMapStatus.set('error');
+      this.reportMapErrorDetails.set(this.describeMapError(error));
+    }
+  }
+
+  private updateReportMapMarker(): void {
+    if ((!this.reportMap || !this.maplibre) && (!this.reportFallbackMap || !this.leaflet)) return;
+    const { longitude, latitude } = this.coordinates();
+    const lng = Number(longitude);
+    const lat = Number(latitude);
+    if (
+      !longitude.trim() ||
+      !latitude.trim() ||
+      !Number.isFinite(lng) ||
+      !Number.isFinite(lat) ||
+      Math.abs(lng) > 180 ||
+      Math.abs(lat) > 90
+    ) {
+      this.reportMapMarker?.remove();
+      this.reportMapMarker = undefined;
+      this.reportFallbackMarker?.remove();
+      this.reportFallbackMarker = undefined;
+      return;
+    }
+    if (this.reportMap && this.maplibre) {
+      if (!this.reportMapMarker) {
+        this.reportMapMarker = new this.maplibre.Marker({ color: '#10B981' });
+      }
+      this.reportMapMarker.setLngLat([lng, lat]).addTo(this.reportMap);
+    } else if (this.reportFallbackMap && this.leaflet) {
+      if (!this.reportFallbackMarker) {
+        this.reportFallbackMarker = this.leaflet
+          .circleMarker([lat, lng], {
+            radius: 8,
+            color: '#f4f4f5',
+            weight: 2,
+            fillColor: '#10B981',
+            fillOpacity: 1,
+          })
+          .addTo(this.reportFallbackMap);
+      } else {
+        this.reportFallbackMarker.setLatLng([lat, lng]);
+      }
+    }
+  }
+
+  private disposeReportMap(): void {
+    this.reportMapMarker?.remove();
+    this.reportMapMarker = undefined;
+    this.reportFallbackMarker?.remove();
+    this.reportFallbackMarker = undefined;
+    this.reportMap?.remove();
+    this.reportMap = undefined;
+    this.reportFallbackMap?.remove();
+    this.reportFallbackMap = undefined;
+    this.reportMapStatus.set('idle');
+  }
+
+  protected retryReportMap(): void {
+    this.disposeReportMap();
+    this.reportMapErrorDetails.set('');
+    void this.initializeReportMap();
+  }
+
+  private describeMapError(error: unknown): string {
+    if (error && typeof error === 'object' && 'message' in error) {
+      const message = error.message;
+      if (typeof message === 'string' && message.trim()) return message.slice(0, 240);
+    }
+    if (typeof error === 'string' && error.trim()) return error.slice(0, 240);
+    return 'Falha desconhecida ao inicializar o mapa.';
+  }
+
+  private supportsWebGL2(): boolean {
+    if (typeof document === 'undefined' || typeof window.WebGL2RenderingContext === 'undefined') {
+      return false;
+    }
+    try {
+      return document.createElement('canvas').getContext('webgl2') !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  private supportsCanvas2D(): boolean {
+    if (typeof document === 'undefined') return false;
+    try {
+      return document.createElement('canvas').getContext('2d') !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  private selectTerritoryHighlight(id: number | null): void {
+    const previousId = this.selectedTerritoryId();
+    if (this.map?.getSource('territory-source')) {
+      if (previousId !== null) {
+        this.map.removeFeatureState({ source: 'territory-source', id: previousId }, 'selected');
+      }
+      if (id !== null) {
+        this.map.setFeatureState({ source: 'territory-source', id }, { selected: true });
+      }
+    }
+    this.selectedTerritoryId.set(id);
+    if (this.fallbackMap) this.updateFallbackTerritories();
+  }
+
+  private async loadTerritories(): Promise<void> {
+    if (this.territoryStatus() === 'loaded') return;
+    if (this.territoryLoadPromise) return this.territoryLoadPromise;
+
+    this.territoryStatus.set('loading');
+    this.territoryLoadPromise = (async () => {
+      try {
+        const response = await fetch(new URL(TERRITORY_DATA_URL, document.baseURI));
+        if (!response.ok) throw new Error(`Territorial data request failed: ${response.status}`);
+        const collection = (await response.json()) as FeatureCollection<
+          Polygon | MultiPolygon,
+          TerritoryProperties
+        >;
+        if (collection.type !== 'FeatureCollection' || !Array.isArray(collection.features)) {
+          throw new Error('Invalid territorial FeatureCollection');
+        }
+        const features = collection.features
+          .map((feature, index) => ({ ...feature, id: index + 1 }) as TerritoryFeature)
+          .filter(
+            (feature) =>
+              (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') &&
+              typeof feature.properties?.n === 'string' &&
+              TERRITORY_GROUP_BY_ID.has(feature.properties.f),
+          );
+        if (!features.length) throw new Error('No usable territorial features');
+        this.territories.set(features);
+        this.territoryStatus.set('loaded');
+        this.installTerritoryLayer();
+        this.applyTerritoryFilter();
+      } catch {
+        this.territoryStatus.set('error');
+      } finally {
+        this.territoryLoadPromise = undefined;
+      }
+    })();
+    return this.territoryLoadPromise;
+  }
+
+  private installTerritoryLayer(): void {
+    if (this.fallbackMap) {
+      this.updateFallbackTerritories();
+      return;
+    }
+    if (
+      !this.map ||
+      !this.mapReady() ||
+      !this.territories().length ||
+      this.map.getSource('territory-source')
+    ) {
+      return;
+    }
+
+    this.map.addSource('territory-source', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: this.territories() },
+    });
+    const firstSymbolLayer = this.map
+      .getStyle()
+      .layers?.find((layer) => layer.type === 'symbol')?.id;
+    this.map.addLayer(
+      {
+        id: 'territory-polygons-fill',
+        type: 'fill',
+        source: 'territory-source',
+        paint: {
+          'fill-color': [
+            'match',
+            ['get', 'f'],
+            'CV',
+            '#E0342C',
+            'TCP',
+            '#2FA46B',
+            'ADA',
+            '#EDB72B',
+            'MIL',
+            '#4E9DE0',
+            'LJ',
+            '#2B5BC7',
+            'MNI',
+            '#9B6BD6',
+            'NEU',
+            '#8C97A3',
+            '#8C97A3',
+          ],
+          'fill-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.44, 0.22],
+        },
+      },
+      firstSymbolLayer,
+    );
+    this.map.addLayer(
+      {
+        id: 'territory-polygons-outline',
+        type: 'line',
+        source: 'territory-source',
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'f'],
+            'CV',
+            '#E0342C',
+            'TCP',
+            '#2FA46B',
+            'ADA',
+            '#EDB72B',
+            'MIL',
+            '#4E9DE0',
+            'LJ',
+            '#2B5BC7',
+            'MNI',
+            '#9B6BD6',
+            'NEU',
+            '#8C97A3',
+            '#8C97A3',
+          ],
+          'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 2.3, 1.1],
+          'line-opacity': 0.84,
+        },
+      },
+      firstSymbolLayer,
+    );
+    this.map.on('click', 'territory-polygons-fill', (event) => {
+      const properties = event.features?.[0]?.properties;
+      const code = properties?.['f'] as TerritoryCode | undefined;
+      const group = code ? TERRITORY_GROUP_BY_ID.get(code) : undefined;
+      if (!properties || !group || !this.map || !this.maplibre) return;
+
+      const content = document.createElement('div');
+      content.className = 'map-popup';
+      const title = document.createElement('strong');
+      title.textContent = String(properties['n'] ?? 'Área mapeada');
+      const label = document.createElement('p');
+      label.textContent = `Classificação da fonte: ${group.label}`;
+      const note = document.createElement('small');
+      note.textContent = 'Base informada: julho de 2026. Não confirma a situação atual.';
+      const source = document.createElement('a');
+      source.href = 'https://dadosderiscos.com.br/mapa-rj-risco-faccoes.html';
+      source.target = '_blank';
+      source.rel = 'noopener noreferrer';
+      source.textContent = 'Fonte dos polígonos';
+      content.append(title, label, note, source);
+      new this.maplibre.Popup({ closeButton: true, offset: 12 })
+        .setLngLat(event.lngLat)
+        .setDOMContent(content)
+        .addTo(this.map);
+    });
+    this.map.on('mouseenter', 'territory-polygons-fill', () => {
+      if (this.map) this.map.getCanvas().style.cursor = 'pointer';
+    });
+    this.map.on('mouseleave', 'territory-polygons-fill', () => {
+      if (this.map) this.map.getCanvas().style.cursor = '';
+    });
+    const selectedAreaId = this.selectedTerritoryId();
+    if (selectedAreaId !== null) {
+      this.map.setFeatureState(
+        { source: 'territory-source', id: selectedAreaId },
+        { selected: true },
+      );
+    }
+    this.applyTerritoryFilter();
+  }
+
+  private applyTerritoryFilter(): void {
+    if (this.fallbackMap) {
+      this.updateFallbackTerritories();
+      return;
+    }
+    if (!this.map?.getLayer('territory-polygons-fill')) return;
+    const selectedGroups = this.activeFilters()
+      .filter((filter) => filter.startsWith('territory:'))
+      .map((filter) => filter.slice('territory:'.length));
+    this.map.setFilter('territory-polygons-fill', [
+      'in',
+      ['get', 'f'],
+      ['literal', selectedGroups],
+    ]);
+    this.map.setFilter('territory-polygons-outline', [
+      'in',
+      ['get', 'f'],
+      ['literal', selectedGroups],
+    ]);
+  }
+
+  private updateFallbackTerritories(): void {
+    if (!this.leaflet || !this.fallbackMap || !this.fallbackTerritoryLayer) return;
+    this.fallbackTerritoryLayer.clearLayers();
+    const selectedGroups = new Set(
+      this.activeFilters()
+        .filter((filter) => filter.startsWith('territory:'))
+        .map((filter) => filter.slice('territory:'.length)),
+    );
+    const selectedId = this.selectedTerritoryId();
+
+    for (const area of this.territories()) {
+      if (!selectedGroups.has(area.properties.f)) continue;
+      const group = TERRITORY_GROUP_BY_ID.get(area.properties.f);
+      if (!group) continue;
+      const isSelected = selectedId === area.id;
+      this.leaflet
+        .geoJSON(area, {
+          style: {
+            color: group.color,
+            weight: isSelected ? 2.3 : 1.1,
+            opacity: 0.84,
+            fillOpacity: isSelected ? 0.44 : 0.22,
+          },
+          onEachFeature: (_feature, layer) => {
+            layer.on('click', (event) => {
+              this.focusTerritory(area);
+              this.leaflet
+                ?.popup({ closeButton: true })
+                .setLatLng(event.latlng)
+                .setContent(this.createTerritoryPopup(area))
+                .openOn(this.fallbackMap!);
+            });
+          },
+        })
+        .addTo(this.fallbackTerritoryLayer);
+    }
+  }
+
+  private createTerritoryPopup(area: TerritoryFeature): HTMLElement {
+    const content = document.createElement('div');
+    content.className = 'map-popup';
+    const title = document.createElement('strong');
+    title.textContent = area.properties.n;
+    const group = TERRITORY_GROUP_BY_ID.get(area.properties.f);
+    const label = document.createElement('p');
+    label.textContent = `Classificação da fonte: ${group?.label ?? 'não informada'}`;
+    const note = document.createElement('small');
+    note.textContent = 'Base informada: julho de 2026. Não confirma a situação atual.';
+    const source = document.createElement('a');
+    source.href = 'https://dadosderiscos.com.br/mapa-rj-risco-faccoes.html';
+    source.target = '_blank';
+    source.rel = 'noopener noreferrer';
+    source.textContent = 'Fonte dos polígonos';
+    content.append(title, label, note, source);
+    return content;
+  }
+
+  private getTerritoryBounds(area: TerritoryFeature): [[number, number], [number, number]] {
+    const positions =
+      area.geometry.type === 'Polygon'
+        ? area.geometry.coordinates.flat(1)
+        : area.geometry.coordinates.flat(2);
+    const longitudes = positions.map(([longitude]) => longitude);
+    const latitudes = positions.map(([, latitude]) => latitude);
+    return [
+      [Math.min(...longitudes), Math.min(...latitudes)],
+      [Math.max(...longitudes), Math.max(...latitudes)],
+    ];
+  }
+
+  private collectSearchResults(query: string): MapSearchResult[] {
+    const normalized = normalizeSearch(query);
+    if (normalized.length < 2) return [];
+
+    const occurrences = this.visiblePoints()
+      .filter((point) =>
+        normalizeSearch(`${point.name} ${point.location} ${point.description}`).includes(
+          normalized,
+        ),
+      )
+      .map((point) => ({
+        kind: 'occurrence' as const,
+        key: `occurrence:${point.id}`,
+        title: point.name,
+        subtitle: `${point.location} · ${point.kind === 'poi' ? 'Ponto de interesse fictício' : 'Ocorrência fictícia'}`,
+        point,
+      }));
+    const areas = this.territories()
+      .filter((area) => normalizeSearch(area.properties.n).includes(normalized))
+      .map((area) => ({
+        kind: 'territory' as const,
+        key: `territory:${area.id}`,
+        title: area.properties.n,
+        subtitle: `${TERRITORY_GROUP_BY_ID.get(area.properties.f)?.label ?? 'Classificação da fonte'} · Base jul/2026`,
+        area,
+      }));
+    return [...occurrences, ...areas];
+  }
+
+  private updateFallbackMapLayers(): void {
+    const leaflet = this.leaflet;
+    const map = this.fallbackMap;
+    const pointsLayer = this.fallbackPointsLayer;
+    const eventHeatLayer = this.fallbackEventHeatLayer;
+    const poiHeatLayer = this.fallbackPoiHeatLayer;
+    const radiusLayer = this.fallbackRadiusLayer;
+    if (!leaflet || !map || !pointsLayer || !eventHeatLayer || !poiHeatLayer || !radiusLayer) {
+      return;
+    }
+
+    const showHeat = this.heatmap();
+    for (const [layer, visible] of [
+      [pointsLayer, !showHeat],
+      [eventHeatLayer, showHeat],
+      [poiHeatLayer, showHeat],
+    ] as [LeafletLayerGroup, boolean][]) {
+      if (visible && !map.hasLayer(layer)) layer.addTo(map);
+      else if (!visible && map.hasLayer(layer)) map.removeLayer(layer);
+      layer.clearLayers();
+    }
+
+    for (const point of this.visiblePoints()) {
+      const [longitude, latitude] = point.coordinates;
+      const color =
+        point.kind === 'poi'
+          ? '#a3e635'
+          : point.category === 'TRANSITO'
+            ? '#38bdf8'
+            : point.category === 'SEGURANCA'
+              ? '#fb7185'
+              : '#fbbf24';
+      const selected = this.selectedPointId() === point.id;
+      const marker = leaflet.circleMarker([latitude, longitude], {
+        radius: showHeat
+          ? point.kind === 'occurrence'
+            ? 26
+            : 22
+          : selected
+            ? 9
+            : point.severity === 'CRITICA'
+              ? 8
+              : point.severity === 'ALTA'
+                ? 7
+                : 5,
+        color: showHeat ? color : '#f4f4f5',
+        weight: showHeat ? 0 : 1.5,
+        opacity: showHeat ? 0.35 : 1,
+        fillColor: color,
+        fillOpacity: showHeat ? 0.22 : 0.94,
+      });
+
+      if (showHeat) {
+        marker.addTo(point.kind === 'occurrence' ? eventHeatLayer : poiHeatLayer);
+      } else {
+        marker.bindTooltip(this.markerCode(point), {
+          permanent: true,
+          direction: 'center',
+          className: 'fallback-marker-code',
+        });
+        marker.on('click', () => {
+          this.selectedPointId.set(point.id);
+          this.refreshMapData();
+          leaflet
+            .popup({ closeButton: true, offset: [0, -8] })
+            .setLatLng([latitude, longitude])
+            .setContent(this.createRasterPointPopup(point))
+            .openOn(map);
+        });
+        marker.addTo(pointsLayer);
+      }
+    }
+
+    radiusLayer.clearLayers();
+    if (this.useRadius() && !this.radiusInvalid()) {
+      const center = this.searchCenter();
+      const longitude = Number(center.longitude);
+      const latitude = Number(center.latitude);
+      leaflet
+        .circle([latitude, longitude], {
+          radius: this.radiusMeters(),
+          color: SEARCH_RADIUS_COLOR,
+          opacity: 0.82,
+          weight: 2,
+          fillColor: SEARCH_RADIUS_COLOR,
+          fillOpacity: 0.18,
+        })
+        .addTo(radiusLayer);
+    }
+  }
+
+  private createRasterPointPopup(point: DemoPoint): HTMLElement {
+    const content = document.createElement('div');
+    content.className = 'map-popup';
+    const title = document.createElement('strong');
+    title.textContent = point.name;
+    const description = document.createElement('p');
+    description.textContent = point.description;
+    const location = document.createElement('span');
+    location.textContent = point.location;
+    const type = document.createElement('span');
+    type.textContent = `${this.recordTypeLabel(point)} · ${point.severity ?? 'gravidade não informada'}`;
+    const status = document.createElement('span');
+    status.textContent = this.statusLabel(point.operationalStatus);
+    const source = document.createElement('small');
+    source.textContent = `Fonte: ${point.sourceId ?? 'demonstração local'}`;
+    const inserted = document.createElement('small');
+    inserted.textContent = `Inserido às ${this.formatTime(point.insertedAt)}`;
+    content.append(title, description, location, type, status, source, inserted);
+    return content;
+  }
+
+  private refreshMapData(): void {
+    const visibleIds = new Set(this.visiblePoints().map((point) => point.id));
+    this.expandedResultDetailIds.update((ids) => ids.filter((id) => visibleIds.has(id)));
+    const source = this.map?.getSource('demo-points') as maplibregl.GeoJSONSource | undefined;
+    source?.setData(this.toGeoJson());
+    const occurrenceSource = this.map?.getSource('heat-occurrences') as
+      maplibregl.GeoJSONSource | undefined;
+    occurrenceSource?.setData(this.toGeoJson('occurrence'));
+    const poiSource = this.map?.getSource('heat-pois') as maplibregl.GeoJSONSource | undefined;
+    poiSource?.setData(this.toGeoJson('poi'));
+    this.updateMapLayers();
+  }
+
+  private updateMapLayers(): void {
+    this.updateFallbackMapLayers();
+    const radiusSource = this.map?.getSource('search-radius-source') as
+      maplibregl.GeoJSONSource | undefined;
+    radiusSource?.setData(this.radiusGeoJson());
+    const source = this.map?.getSource('demo-points') as maplibregl.GeoJSONSource | undefined;
+    if (!source) return;
+    source.setData(this.toGeoJson());
+    const occurrenceSource = this.map?.getSource('heat-occurrences') as
+      maplibregl.GeoJSONSource | undefined;
+    occurrenceSource?.setData(this.toGeoJson('occurrence'));
+    const poiSource = this.map?.getSource('heat-pois') as maplibregl.GeoJSONSource | undefined;
+    poiSource?.setData(this.toGeoJson('poi'));
+    if (this.heatmap() && this.map?.getLayer('demo-points-dot')) {
+      this.map.setLayoutProperty('demo-points-dot', 'visibility', 'none');
+      if (this.map.getLayer('demo-points-code')) {
+        this.map.setLayoutProperty('demo-points-code', 'visibility', 'none');
+      }
+      this.map.setLayoutProperty('demo-points-glow', 'visibility', 'none');
+      for (const [id, heatSource, gradient] of [
+        [
+          'demo-heatmap-events',
+          'heat-occurrences',
+          [
+            'interpolate',
+            ['linear'],
+            ['heatmap-density'],
+            0,
+            'rgba(56,189,248,0)',
+            0.35,
+            '#38bdf8',
+            1,
+            '#f87171',
+          ],
+        ],
+        [
+          'demo-heatmap-pois',
+          'heat-pois',
+          [
+            'interpolate',
+            ['linear'],
+            ['heatmap-density'],
+            0,
+            'rgba(163,230,53,0)',
+            0.35,
+            '#a3e635',
+            1,
+            '#c084fc',
+          ],
+        ],
+      ] as [string, string, unknown[]][]) {
+        if (!this.map.getLayer(id)) {
+          this.map.addLayer({
+            id,
+            type: 'heatmap',
+            source: heatSource,
+            paint: {
+              'heatmap-weight': 1,
+              'heatmap-intensity': 0.8,
+              'heatmap-radius': 36,
+              'heatmap-opacity': 0.78,
+              'heatmap-color': gradient as maplibregl.ExpressionSpecification,
+            },
+          });
+        }
+        this.map.setLayoutProperty(id, 'visibility', 'visible');
+      }
+    } else if (this.map?.getLayer('demo-points-dot')) {
+      this.map.setLayoutProperty('demo-points-dot', 'visibility', 'visible');
+      if (this.map.getLayer('demo-points-code')) {
+        this.map.setLayoutProperty('demo-points-code', 'visibility', 'visible');
+      }
+      this.map.setLayoutProperty('demo-points-glow', 'visibility', 'visible');
+      for (const id of ['demo-heatmap-events', 'demo-heatmap-pois']) {
+        if (this.map.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', 'none');
+      }
+    }
+  }
+
+  private toGeoJson(kind?: DemoPoint['kind']): FeatureCollection<Point> {
     return {
       type: 'FeatureCollection',
-      features: this.visiblePoints().map((point) => ({
-        type: 'Feature',
-        id: point.id,
-        geometry: { type: 'Point', coordinates: point.coordinates },
-        properties: {
-          kind: point.kind,
-          name: point.name,
-          description: point.description,
-          location: point.location,
-          insertedAt: point.insertedAt,
-          category: point.category ?? 'POI',
-        },
-      })),
+      features: this.visiblePoints()
+        .filter((point) => !kind || point.kind === kind)
+        .map((point) => ({
+          type: 'Feature',
+          id: point.id,
+          geometry: { type: 'Point', coordinates: point.coordinates },
+          properties: {
+            kind: point.kind,
+            name: point.name,
+            description: point.description,
+            location: point.location,
+            typeLabel: this.recordTypeLabel(point),
+            markerCode: this.markerCode(point),
+            insertedAt: point.insertedAt,
+            occurredAt: point.occurredAt ?? '',
+            severity: point.severity ?? '',
+            operationalStatus: point.operationalStatus ?? '',
+            sourceId: point.sourceId ?? 'demo',
+            category: point.category ?? 'POI',
+            selected: this.selectedPointId() === point.id,
+          },
+        })),
     };
   }
 
-  private periodDuration(): number {
-    const durations: Record<string, number> = {
-      '1w': 7 * 24 * 60 * 60 * 1000,
-      '1m': 31 * 24 * 60 * 60 * 1000,
-      '3m': 93 * 24 * 60 * 60 * 1000,
-      '6m': 186 * 24 * 60 * 60 * 1000,
-      '1y': 366 * 24 * 60 * 60 * 1000,
+  private radiusGeoJson(): FeatureCollection<Polygon> {
+    if (!this.useRadius() || this.radiusInvalid() || !this.radiusCircleFactory) {
+      return { type: 'FeatureCollection', features: [] };
+    }
+    const center = this.searchCenter();
+    const coordinates: Coordinates = [Number(center.longitude), Number(center.latitude)];
+    return {
+      type: 'FeatureCollection',
+      features: [this.radiusCircleFactory(coordinates, this.radiusMeters())],
     };
-    return durations[this.period()] ?? durations['1m'];
   }
 
   private hoursAgo(hours: number): string {

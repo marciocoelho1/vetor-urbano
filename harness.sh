@@ -12,7 +12,7 @@ usage() {
 Uso: bash harness.sh {docs|planning|frontend|backend|all|help}
 
 docs      Confere os arquivos de orientação/referência e a sintaxe deste Bash.
-planning  Confere docs + presença dos documentos produzidos na Fase 0.
+planning  Confere docs + presença dos documentos atuais de produto/roadmap.
 frontend  Exige projeto e dependências locais; executa lint, test:ci e build.
 backend   Exige Maven Wrapper, Java e Docker; executa Maven clean verify.
 all       Executa planning, frontend e backend; exige as duas aplicações.
@@ -56,10 +56,10 @@ check_docs() {
 check_planning() {
   check_docs
   local vu_file
-  for vu_file in README.md docs/escopo.md docs/arquitetura.md docs/aprendizado.md; do
+  for vu_file in README.md docs/escopo.md docs/arquitetura.md docs/implementacao-2026-10.md docs/fontes-territoriais.md; do
     require_file "$vu_file"
   done
-  printf 'OK: documentos da Fase 0 presentes. Conteúdo ainda exige revisão humana.\n'
+  printf 'OK: documentos de produto e roadmap presentes. Conteúdo ainda exige revisão humana.\n'
 }
 
 check_frontend() {

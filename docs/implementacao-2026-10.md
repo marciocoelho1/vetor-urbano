@@ -1,5 +1,7 @@
 # Incremento autorizado — outubro de 2026
 
+**Situação em 06/10/2026:** o pedido anterior autorizou esta direção de produto e seu contrato como incremento; a implementação entregue foi somente o protótipo de interface descrito no fim do documento. A nova proposta de versão 1.0 precisa ser reconciliada com este contrato em `PLAN.md` antes de implementar backend/RBAC. Não interpretar campos/endpoints ainda propostos como comportamento existente.
+
 ## Autorizações e referências
 
 Pedido recebido em 01/10/2026: iniciar Angular/Java/PostgreSQL, aproveitar `visuais/`, preservar a identidade e a Proposta B; implementar categorias, formulário progressivo, três módulos, filtros acumuláveis, POIs, camadas territoriais e mancha térmica. GeoAnalytics é referência funcional, não fonte de código/dados. RF01–RF07/RNF01–RNF08 originais permanecem; este incremento não promete concluí-los integralmente.
@@ -126,7 +128,7 @@ TDD por comportamento: evidência de falha antes da implementação e sucesso de
 
 Fontes externas são registradas mecanicamente em ledger no scratch; bloco de referências será gerado após o registro completo. Evidências finais ficam no PLAN e documentos de verificação; este documento é o contrato, não uma segunda lista de progresso.
 
-## Estado observado desta etapa
+## Estado observado do protótipo inicial — 01/10/2026
 
 Em 01/10/2026 foi implementado o primeiro protótipo Angular, restrito à interface: navegação entre mapa e cadastro, escolha única de categoria antes de revelar o formulário, campos específicos, módulos mutuamente exclusivos com filtros que permanecem ativos, período, camadas de ocorrência/POI, heatmap, lista alternativa e estados demonstrativos. Dados são sintéticos e só vivem no frontend. O worker do MapLibre e o módulo compartilhado são publicados como assets Angular no mesmo diretório; `setWorkerUrl` resolve a URL usando a base atual do documento.
 
@@ -135,3 +137,23 @@ Ainda não foram implementados API, login de Operador, autorização no backend,
 O build e o teste de ordem da configuração do worker passam; ambos os assets foram confirmados no build e no servidor de desenvolvimento. A execução real do worker/mapa em navegador ainda precisa de smoke test visual/funcional.
 
 O protótipo, portanto, não satisfaz o aceite full-stack P1.1 acima. A continuação precisa conectar API e banco com os gates de autenticação e moderação descritos neste contrato antes de habilitar qualquer escrita.
+
+## Adendo de execução F0 frontend-only — 10/10/2026
+
+O incremento demonstrativo aprovado depois desta etapa acrescentou visões locais de histórico, informes ativos, dashboard e fontes; comparação de séries, reprodução temporal, filtros salvos, triagem manual e exportação XLSX. Os dados continuam fictícios ou importados manualmente em memória nesta aba. Estatísticas agregadas não são convertidas em pontos, clippings guardam apenas referências e nenhum endpoint/API ou credencial externa foi criado.
+
+O painel redundante “Data, horário e raio personalizados” foi removido: datas personalizadas e faixa de horário foram mantidas sob o filtro por período. O raio foi movido para dentro do mapa, com centro selecionável no mapa ou editável por coordenadas, início em 100 m, passos de 100 m e limite de 5.000 m. A visualização usa polígono local `#C4B5FD` com preenchimento transparente; a distância ainda é aproximada no cliente e precisa ser validada no PostGIS futuro.
+
+Importação manual: CSV agregado com território/período/indicador/valor/unidade ou GeoJSON FeatureCollection de pontos. A interface exige URL de referência, licença/autorização, data de referência e limitações; valida coordenadas e separa tipos de dado. ISP-RJ, Fogo Cruzado, OTT360, COR-Rio e imprensa aparecem como fontes candidatas, sem conexão automática. “Inform RJO” continua sem identidade/URL confirmada.
+
+Limites: sem backend Java, API, login, persistência no servidor, autorização/moderação real ou atualização de fontes. Saúde de fonte e triagem de clippings são apenas protótipos manuais. Os testes unitários continuam usando mock para configuração de camadas; a matriz E2E separada valida MapLibre/WebGL2 e tiles em navegadores reais. Leitor de tela, aparelhos físicos e desempenho não foram avaliados. Ver resultado atualizado e relação de aderência em `PLAN.md`.
+
+## Revisão final do frontend e evidências de navegador — 10/10/2026
+
+- **Mapa e cadastro:** MapLibre/WebGL2/worker segue primário; sem WebGL2, Leaflet/OSM raster é carregado sob demanda via `frontend/public/maps/raster-provider.json`. Playwright verificou ambos os caminhos. Smoke test separado no Firefox 157 headless, com WebGL2 desativado, carregou 9 tiles OSM no mapa público e 15 no cadastro, todos HTTP 200; atribuição e `Referer` foram verificados. O clique no mapa de cadastro preencheu `longitude=-43.191547`, `latitude=-22.903350`. O teste da suíte intercepta tiles para repetibilidade.
+- **Resultados visíveis:** cada detalhe fica dentro do `<li>` correspondente; o botão alterna abrir/fechar, `aria-expanded` acompanha o estado e há teto de cinco painéis. O botão “Detalhes” está alinhado com o ícone do registro.
+- **Raio/período:** raio 100–5.000 m, centro editável, UI clicável no fallback Leaflet; título acessível do grupo. Os cinco presets têm 6 px de espaçamento. E2E cobre slider, teclado, roda, limites e território.
+- **Responsividade:** Playwright em Firefox/Chromium cobriu larguras 390 e 320 px, foco/skip-link, teclado e ausência de overflow horizontal. Inspeção visual confirmou o mapa Leaflet raster real preenchido, pontos, controles de zoom e atribuição. Sem leitor de tela/aparelho físico.
+- **XLSX:** exportação pt-BR e horário de Brasília; largura/alinhamento, autofiltro, cabeçalho fixo e impressão paisagem. Download passou nos dois navegadores; ZIP/XML validado e planilha conferida no LibreOffice (registro da rodada anterior).
+- **Execução:** `bash harness.sh frontend` passou com lint, 47 testes e build; bundle inicial 439,56 kB (limite 500 kB, sem warnings). MapLibre 1,07 MB/CSS 83,13 kB e Leaflet 149,42 kB/CSS 11,07 kB são chunks sob demanda. `npm run test:e2e -- --workers=1`: 15 passados, 1 ignorado (fallback sem WebGL2 só executa no projeto Firefox). `bash harness.sh planning`, `bash harness.sh docs` e `git diff --check` retornaram 0/sem erros.
+- **Escopo preservado:** nenhuma API, credencial, backend, banco ou dado real de ocorrência foi acrescentado. O mapa usa provedores públicos sem SLA; revisão de termos, contato e capacidade fica pendente antes da publicação. QA não substitui leitor de tela, hardware móvel ou validação operacional.

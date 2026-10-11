@@ -1,6 +1,6 @@
 # Seleção de skills externas — Vetor Urbano
 
-Avaliação em 01/10/2026. Este registro documenta uma **instalação de arquivos locais**, não aprovação de P1.1 nem entrega de aplicação. O projeto permanece na Fase 0 documentada em `PLAN.md`. A referência visual `docs/referencias/ui/`, os limites de `docs/escopo.md` e as regras de `AGENTS.md` prevalecem sobre sugestões genéricas das skills.
+Avaliação em 01/10/2026. Este registro documenta uma **instalação de arquivos locais**, não aprovação de integração ou entrega full-stack. O estado e o roadmap atuais estão em `PLAN.md`. A referência visual `docs/referencias/ui/`, os limites de `docs/escopo.md` e as regras de `AGENTS.md` prevalecem sobre sugestões genéricas das skills.
 
 ## Comparação antes de instalar
 

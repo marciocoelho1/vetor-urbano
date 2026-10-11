@@ -1,4 +1,4 @@
-@import 'maplibre-gl/dist/maplibre-gl.css';
+@use './app/workspace';
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 :root {
@@ -48,6 +48,24 @@ h3 {
 }
 .map-popup strong {
   font-size: 0.82rem;
+}
+.leaflet-tooltip.fallback-marker-code {
+  padding: 2px 3px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  box-shadow: none;
+  color: #18181b;
+  font-family: 'Noto Sans', sans-serif;
+  font-size: 0.56rem;
+  font-weight: 700;
+  text-shadow:
+    0 0 2px #fff,
+    0 0 4px #fff;
+  pointer-events: none;
+}
+.leaflet-tooltip.fallback-marker-code::before {
+  display: none;
 }
 .map-popup p {
   margin: 0;
