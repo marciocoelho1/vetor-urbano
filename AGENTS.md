@@ -9,8 +9,8 @@
 
 ## Contexto e continuidade
 
-- No início de cada sessão, leia `PLAN.md`; consulte `docs/escopo.md`, `docs/arquitetura.md` e decisões existentes conforme a tarefa. Na Fase 0, esses documentos podem ainda não existir.
-- A motivação e os requisitos originais estão em `docs/referencias/contextoInicial.md`; o visual original está em `docs/referencias/ui/`. Preserve essas referências.
+- No início de cada sessão, leia `PLAN.md`; consulte `docs/product/scope.md`, `docs/architecture/overview.md` e decisões existentes conforme a tarefa. Na Fase 0, esses documentos podem ainda não existir.
+- A motivação e os requisitos originais estão em `docs/references/initial-context.md`; o visual original está em `docs/references/ui/`. Preserve essas referências.
 - Separe requisitos fornecidos, decisões aprovadas e propostas. Preserve IDs de RF/RNF e registre mudanças de escopo. Divergências materiais devem ser esclarecidas; não escolha silenciosamente uma versão.
 - Atualize `PLAN.md` ao terminar a tarefa com estado real, evidências, bloqueios e próxima ação. Registre decisões de produto e questões em aberto nos documentos pertinentes, sem criar trilha de exercícios; mantenha este arquivo de instruções enxuto.
 - Um plano gerado por `/plan` pode ficar em `.hermes/plans/`. Referencie seu caminho no `PLAN.md`; evite manter duas listas concorrentes para a mesma tarefa.
@@ -19,7 +19,7 @@
 
 - Stack solicitada: Angular + SCSS, Java e PostgreSQL. Região inicial: cidade do Rio de Janeiro e Baixada Fluminense; confirmar municípios e limites antes de validar cobertura.
 - Hipótese para o backend: Spring Boot em um único serviço, módulos simples por funcionalidade, PostgreSQL + PostGIS, API HTTP, migrações versionadas, npm com lockfile e Maven Wrapper. MapLibre é o provedor atual do protótipo; Google Maps é uma alternativa em avaliação, sujeita a prova comparativa e decisão de custo. Confirme compatibilidade e registre as versões escolhidas antes de gerar projetos.
-- Prefira funcionalidades completas e pequenas, atravessando interface, API e persistência. Modele dados e contratos cedo; não deixe o banco para depois de todo o frontend/backend.
+- Prefira funcionalidades completas e pequenas, atravessando interface, API e persistência. Modele dados e contratos cedo; não deixe o banco para depois de todo o apps/web/backend.
 - Evite dependências, abstrações, microserviços e mensageria sem um problema concreto. Metas de escala e disponibilidade exigem evidências; não são capacidades já alcançadas.
 - Preserve a identidade visual dos anexos. Mudanças de biblioteca, tema ou navegação exigem justificativa ligada ao produto.
 
@@ -38,7 +38,7 @@
 - Atualize contratos, migrações e documentação junto com o comportamento correspondente. Migrações aplicadas devem evoluir por novas migrações.
 - Teste regras e riscos observáveis: autorização por perfil, transições de status, validação de coordenadas, fronteiras de raio/período e integração espacial no PostgreSQL/PostGIS real. H2 não comprova consultas PostGIS.
 - Verifique estados de carregamento, erro e vazio, uso por teclado, alternativa em lista ao mapa e comportamento móvel quando essas telas forem implementadas.
-- Leia os scripts do projeto e execute o modo apropriado do `harness.sh`. `docs`/`planning` são verificações estruturais, não testes da aplicação. Na implementação, use `frontend`, `backend` e, quando houver fluxo completo, `all`.
+- Leia os scripts do projeto e execute o modo apropriado do `scripts/verify.sh`. `docs`/`planning` são verificações estruturais, não testes da aplicação. Na implementação, use `web`, `api` e, quando houver fluxo completo, `all`.
 - Configure os testes para falhar quando faltarem testes esperados. Não silencie falhas nem remova testes para obter sucesso. Informe comandos executados, resultados e verificações que ficaram bloqueadas.
 - Segredos ficam fora do repositório e do contexto enviado ao modelo. Use exemplos sem credenciais reais. Não publique, contrate serviços ou altere dados reais sem autorização específica.
 

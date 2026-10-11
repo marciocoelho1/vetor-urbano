@@ -25,10 +25,10 @@ Thumbs.db
 
 # Local worktrees and extraction outputs (sources/evidence stay versioned)
 .worktrees/
-mapa-rj-extraction/*
-!mapa-rj-extraction/LEIA-ME.md
-!mapa-rj-extraction/extract.py
-!mapa-rj-extraction/verificacao.json
+/tools/map-extraction/*
+!/tools/map-extraction/README.md
+!/tools/map-extraction/extract.py
+!/tools/map-extraction/verification.json
 
 # Video tooling and caches
 **/.tools/
