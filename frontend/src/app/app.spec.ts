@@ -37,8 +37,10 @@ const maplibreWorkerMock = vi.hoisted(() => {
     addSource: vi.fn((_id: string, _source: unknown) => undefined),
     fitBounds: vi.fn(() => undefined),
     flyTo: vi.fn(() => undefined),
+    getCenter: vi.fn(() => ({ lng: -43.19156448029434, lat: -22.903318808380494 })),
+    getZoom: vi.fn(() => 12.2),
     getLayer: vi.fn(() => ({ id: 'layer' })),
-    getSource: vi.fn(() => undefined),
+    getSource: vi.fn((_id: string): unknown => undefined),
     getStyle: vi.fn(() => ({ layers: [{ id: 'place-labels', type: 'symbol' }] })),
     on: vi.fn((...args: unknown[]) => {
       const callback = args.at(-1);
@@ -125,6 +127,16 @@ describe('Vetor Urbano', () => {
       providers: [{ provide: PLATFORM_ID, useValue: 'server' }],
     }).compileComponents();
     fixture = TestBed.createComponent(App);
+    vi.spyOn(
+      fixture.componentInstance as unknown as { loadUrbanStyle: () => Promise<unknown> },
+      'loadUrbanStyle',
+    ).mockResolvedValue({
+      version: 8,
+      name: 'Vetor Urbano',
+      sources: {},
+      layers: [],
+      sprite: 'maps/occurrence-pins',
+    });
     fixture.detectChanges();
   });
 
@@ -151,7 +163,10 @@ describe('Vetor Urbano', () => {
   });
 
   it('searches visible occurrences and lets a search result focus the matching marker', () => {
-    const app = fixture.componentInstance as unknown as { map: typeof maplibreWorkerMock.map };
+    const app = fixture.componentInstance as unknown as {
+      map: typeof maplibreWorkerMock.map;
+      allPoints: () => { id: string; coordinates: [number, number] }[];
+    };
     app.map = maplibreWorkerMock.map;
 
     const search = fixture.nativeElement.querySelector(
@@ -167,7 +182,9 @@ describe('Vetor Urbano', () => {
     expect(result).not.toBeNull();
     result.click();
     expect(maplibreWorkerMock.map.flyTo).toHaveBeenCalledWith(
-      expect.objectContaining({ center: [-43.1812, -22.9035] }),
+      expect.objectContaining({
+        center: app.allPoints().find((point) => point.id === 'demo-001')!.coordinates,
+      }),
     );
   });
 
@@ -275,8 +292,8 @@ describe('Vetor Urbano', () => {
     fixture.nativeElement.querySelector('input[data-filter="poi:HOSPITAL_PUBLICO"]')?.click();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelector('.result-total strong').textContent).toBe('2');
-    expect(fixture.nativeElement.textContent).toContain('3 itens');
+    expect(fixture.nativeElement.querySelector('.result-total strong').textContent).toBe('25');
+    expect(fixture.nativeElement.textContent).toContain('26 itens');
     expect(fixture.nativeElement.textContent).toContain('Unidade de saúde demonstrativa');
   });
 
@@ -355,9 +372,23 @@ describe('Vetor Urbano', () => {
     expect(fixture.nativeElement.textContent).not.toContain('aprovação por operador');
   });
 
-  it('shows the map fallback when the public basemap fails before loading', async () => {
+  it('loads the 2D map when the vector basemap fails before loading', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          tileUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          maxZoom: 19,
+          attribution: 'OpenStreetMap contributors',
+        }),
+      })),
+    );
     const previousDescriptor = Object.getOwnPropertyDescriptor(window, 'WebGLRenderingContext');
     const webGL2 = stubWebGL2Context();
+    webGL2.contextSpy.mockImplementation((type) =>
+      type === 'webgl2' ? ({} as WebGL2RenderingContext) : null,
+    );
     Object.defineProperty(window, 'WebGLRenderingContext', {
       configurable: true,
       value: class WebGLRenderingContext {},
@@ -372,10 +403,13 @@ describe('Vetor Urbano', () => {
       const errorHandler = maplibreWorkerMock.callbacks.get('error');
       expect(errorHandler).toBeTypeOf('function');
       errorHandler?.({ error: new Error('tile service unavailable') });
+      await vi.waitFor(() => {
+        expect(document.querySelector('#map-canvas.leaflet-container')).not.toBeNull();
+      });
       fixture.detectChanges();
 
-      expect(app.mapError()).toBe(true);
-      expect(fixture.nativeElement.querySelector('.map-fallback')).not.toBeNull();
+      expect(app.mapError()).toBe(false);
+      expect(fixture.nativeElement.querySelector('.map-fallback')).toBeNull();
     } finally {
       webGL2.restore();
       if (previousDescriptor) {
@@ -383,6 +417,28 @@ describe('Vetor Urbano', () => {
       } else {
         Reflect.deleteProperty(window, 'WebGLRenderingContext');
       }
+    }
+  });
+
+  it('prefers 2D for software graphics and preserves vector for accelerated or private GPUs', () => {
+    const webGL2 = stubWebGL2Context();
+    const app = fixture.componentInstance as unknown as { supportsWebGL2: () => boolean };
+    try {
+      for (const [renderer, expected] of [
+        ['ANGLE (Vulkan, SwiftShader Device)', false],
+        ['llvmpipe (LLVM 15.0.7, 256 bits)', false],
+        ['Software Rasterizer', false],
+        ['ANGLE (NVIDIA GeForce, OpenGL)', true],
+        ['', true],
+      ] as const) {
+        webGL2.contextSpy.mockReturnValue({
+          getExtension: () => (renderer ? { UNMASKED_RENDERER_WEBGL: 0x9246 } : null),
+          getParameter: () => renderer,
+        } as unknown as WebGL2RenderingContext);
+        expect(app.supportsWebGL2(), renderer || 'renderer hidden by privacy').toBe(expected);
+      }
+    } finally {
+      webGL2.restore();
     }
   });
 
@@ -432,6 +488,10 @@ describe('Vetor Urbano', () => {
 
   it('exposes the cause of a MapLibre initialization error in the fallback state', async () => {
     const webGL2 = stubWebGL2Context();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 503 })),
+    );
     maplibreWorkerMock.callbacks.clear();
     try {
       const app = fixture.componentInstance as unknown as {
@@ -442,9 +502,51 @@ describe('Vetor Urbano', () => {
       maplibreWorkerMock.callbacks.get('error')?.({ error: new Error('Failed to fetch style') });
 
       expect(app.mapErrorDetails()).toContain('Failed to fetch style');
+      await vi.waitFor(() => expect(app.mapErrorDetails()).toContain('503'));
     } finally {
       webGL2.restore();
     }
+  });
+
+  it('bounds a stalled vector map initialization and cancels its watchdog on disposal', () => {
+    vi.useFakeTimers();
+    try {
+      const app = fixture.componentInstance as unknown as {
+        monitorMap: (
+          map: unknown,
+          ready: () => void,
+          failed: (error: unknown) => void,
+        ) => () => void;
+      };
+      const failed = vi.fn();
+      const stop = app.monitorMap(maplibreWorkerMock.map, vi.fn(), failed);
+      vi.advanceTimersByTime(7999);
+      expect(failed).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(failed).toHaveBeenCalledOnce();
+      stop();
+      failed.mockClear();
+      const dispose = app.monitorMap(maplibreWorkerMock.map, vi.fn(), failed);
+      dispose();
+      vi.advanceTimersByTime(8000);
+      expect(failed).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a loaded vector map usable after an isolated tile error', () => {
+    const app = fixture.componentInstance as unknown as {
+      monitorMap: (map: unknown, ready: () => void, failed: (error: unknown) => void) => () => void;
+    };
+    const ready = vi.fn();
+    const failed = vi.fn();
+    const stop = app.monitorMap(maplibreWorkerMock.map, ready, failed);
+    maplibreWorkerMock.callbacks.get('idle')?.();
+    maplibreWorkerMock.callbacks.get('error')?.({ error: new Error('isolated tile failure') });
+    expect(ready).toHaveBeenCalledOnce();
+    expect(failed).not.toHaveBeenCalled();
+    stop();
   });
 
   it('sets the self-hosted MapLibre worker URL before creating the map', async () => {
@@ -467,20 +569,19 @@ describe('Vetor Urbano', () => {
       const expectedUrl = new URL('assets/maplibre/maplibre-gl-worker.mjs', document.baseURI).href;
       expect(document.querySelector('link[data-maplibre-style]')).not.toBeNull();
       expect(maplibreWorkerMock.setWorkerUrl).toHaveBeenCalledWith(expectedUrl);
-      expect(maplibreWorkerMock.map.configuration?.['style']).toBe(
-        'https://tiles.openfreemap.org/styles/bright',
-      );
+      expect(maplibreWorkerMock.map.configuration?.['style']).toMatchObject({
+        name: 'Vetor Urbano',
+      });
       const attribution = maplibreWorkerMock.map.configuration?.['attributionControl'] as {
         compact: boolean;
-        customAttribution: string;
+        customAttribution?: string;
       };
       expect(maplibreWorkerMock.map.configuration?.['center']).toEqual([
         -43.19156448029434, -22.903318808380494,
       ]);
       expect(attribution.compact).toBe(false);
-      expect(attribution.customAttribution).toContain('OpenStreetMap contributors');
-      expect(attribution.customAttribution).toContain('OpenFreeMap');
-      expect(attribution.customAttribution).toContain('OpenMapTiles');
+      // The style's source already supplies attribution; avoid duplicate credits.
+      expect(attribution.customAttribution).toBeUndefined();
       expect(maplibreWorkerMock.calls).toEqual([`worker:${expectedUrl}`, 'map']);
     } finally {
       webGL2.restore();
@@ -525,6 +626,64 @@ describe('Vetor Urbano', () => {
     expect(app.useRadius()).toBe(true);
     expect(app.searchCenter()).toEqual({ longitude: '-43.205', latitude: '-22.91' });
     expect(app.mapPickPurpose()).toBeNull();
+  });
+
+  it('changes the center on repeated left clicks only while radius filtering is enabled', () => {
+    const app = fixture.componentInstance as unknown as {
+      toggleRadius: (enabled: boolean) => void;
+      handleMapClick: (longitude: number, latitude: number, button?: number) => void;
+      searchCenter: () => { longitude: string; latitude: string };
+    };
+    const initial = app.searchCenter();
+    app.handleMapClick(-43.3, -22.8);
+    expect(app.searchCenter()).toEqual(initial);
+    app.toggleRadius(true);
+    app.handleMapClick(-43.3, -22.8, 2);
+    expect(app.searchCenter()).toEqual(initial);
+    app.handleMapClick(-43.3, -22.8);
+    app.handleMapClick(-43.4, -22.7);
+    expect(app.searchCenter()).toEqual({ longitude: '-43.4', latitude: '-22.7' });
+    app.toggleRadius(false);
+    app.handleMapClick(-43.2, -22.9);
+    expect(app.searchCenter()).toEqual({ longitude: '-43.4', latitude: '-22.7' });
+  });
+
+  it('coalesces rapid filter changes and submits each GeoJSON source only once per frame', () => {
+    const app = fixture.componentInstance as unknown as {
+      map: unknown;
+      refreshMapData: () => void;
+      setRadiusMeters: (value: string) => void;
+      mapRefreshFrame?: number;
+    };
+    const frames: FrameRequestCallback[] = [];
+    const schedule = vi
+      .spyOn(globalThis, 'requestAnimationFrame')
+      .mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+    const sources = new Map(
+      ['demo-points', 'heat-occurrences', 'heat-pois', 'search-radius-source'].map((id) => [
+        id,
+        { setData: vi.fn() },
+      ]),
+    );
+    maplibreWorkerMock.map.getSource.mockImplementation((id?: string) => sources.get(id!));
+    app.map = maplibreWorkerMock.map;
+    try {
+      for (let index = 0; index < 100; index++) app.setRadiusMeters(String(100 + index * 100));
+      for (const source of sources.values()) expect(source.setData).not.toHaveBeenCalled();
+      // Angular also schedules a frame for signal-driven DOM rendering.
+      for (const callback of frames.splice(0)) callback(0);
+      for (const source of sources.values()) expect(source.setData).toHaveBeenCalledOnce();
+      app.refreshMapData();
+      for (const callback of frames.splice(0)) callback(16);
+      for (const source of sources.values()) expect(source.setData).toHaveBeenCalledTimes(2);
+    } finally {
+      schedule.mockRestore();
+      maplibreWorkerMock.map.getSource.mockReturnValue(undefined);
+      app.map = undefined;
+    }
   });
 
   it('saves and restores the full filter state only in this browser', () => {
@@ -924,8 +1083,9 @@ describe('Vetor Urbano', () => {
     app.activeFilters.set(['poi:ESTADIO']);
     app.refreshMapData();
     fixture.detectChanges();
-    expect(buttons[5]?.disabled).toBe(false);
-    buttons[5]!.click();
+    const remaining = root.querySelector<HTMLButtonElement>('.record-detail-button')!;
+    expect(remaining.disabled).toBe(false);
+    remaining.click();
     fixture.detectChanges();
 
     app.activeFilters.set(allFilters);
@@ -934,7 +1094,7 @@ describe('Vetor Urbano', () => {
     expect(root.querySelectorAll('.result-inline-detail').length).toBeLessThanOrEqual(5);
   });
 
-  it('starts the map radius at 100 m and adjusts it by mouse wheel within 100–5,000 m', () => {
+  it('starts the map radius at 1 km and adjusts it by mouse wheel within 100–25,000 m', () => {
     const app = fixture.componentInstance as unknown as {
       radiusMeters: () => number;
       useRadius: { set: (enabled: boolean) => void };
@@ -950,19 +1110,19 @@ describe('Vetor Urbano', () => {
       stopPropagation: vi.fn(),
     });
 
-    expect(app.radiusMeters()).toBe(100);
+    expect(app.radiusMeters()).toBe(1000);
     app.useRadius.set(true);
     const zoomIn = wheel(-1);
     app.adjustRadiusWithWheel(zoomIn);
-    expect(app.radiusMeters()).toBe(200);
+    expect(app.radiusMeters()).toBe(1100);
     expect(zoomIn.preventDefault).toHaveBeenCalledOnce();
 
-    for (let index = 0; index < 60; index += 1) app.adjustRadiusWithWheel(wheel(-1));
-    expect(app.radiusMeters()).toBe(5000);
+    for (let index = 0; index < 260; index += 1) app.adjustRadiusWithWheel(wheel(-1));
+    expect(app.radiusMeters()).toBe(25000);
 
     const zoomOut = wheel(1);
     app.adjustRadiusWithWheel(zoomOut);
-    expect(app.radiusMeters()).toBe(4900);
+    expect(app.radiusMeters()).toBe(24900);
   });
 
   it('uses Central do Brasil as the initial map, search-radius, and report coordinate', () => {

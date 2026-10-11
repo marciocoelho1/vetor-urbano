@@ -1,5 +1,37 @@
 # Patch notes
 
+## 2026-10-11 — Referência de fluidez, paleta clara e pins por categoria
+
+- Referência inspecionada: Leaflet 1.9.4/CARTO Voyager. MapLibre/Leaflet mantidos; base Bright vetorial local com água azul, áreas verdes, vias claras e 32 camadas. Fallback Bright raster semelhante, sem declarar igualdade de paleta.
+- Pins verde/carro, vermelho/pistola e amarelo/exclamação, borda preta/círculo branco; SVG/sprites locais com ícones Material Design Icons Apache 2.0. Popups vetoriais identificam registro por propriedade explícita.
+- GPU por software identificada passa diretamente ao Leaflet, conforme comparação de arraste com a referência. Leaflet reaproveita pins/círculo entre mudanças do raio; estilo vetorial é carregado uma vez por sessão. Raio inicial 1 km, passos de 100 m e teto de 25 km.
+- Segurança conserva todas as coordenadas; Trânsito/Contingência dispersos por ID em recortes urbanos em terra, a pelo menos 900 m dos demais eventos. Intervalo em uma coluna responsiva.
+- `harness frontend`: lint, 56 testes, build 449,26 kB; E2E: 44 passados/zero ignorados em Firefox/Chromium. Fontes, licenças, limites e medições em `docs/mapas-referencia-visual.md`.
+
+## 2026-10-11 — Desempenho, raio de 25 km e massa metropolitana
+
+- Raio até 25.000 m: clique esquerdo muda o centro continuamente apenas com o filtro ligado; arraste move a câmera. Centro inicial na Central do Brasil.
+- Mantém mapa público/câmera/tiles na navegação, acompanha redimensionamento e consolida alterações por quadro; elimina submissões GeoJSON duplicadas.
+- 25 ocorrências fictícias por categoria (75 no total), coordenadas distintas e agrupamentos em nove municípios da RMRJ; dois POIs separados. Não declara cobertura operacional nem ocorrência real.
+- `harness frontend`: lint, 54 testes, build 444,20 kB inicial; E2E: 38 passados/zero ignorados. Análise de Google Maps, fontes e limitações em `docs/mapas-desempenho-google.md`; nenhuma troca, conta ou serviço contratado.
+
+## 2026-10-11 — Mapa-base suave e escala equivalente
+
+- Análise do commit `9574a63`: troca de OSM raster/opacidade 0,82 por OpenFreeMap Bright vetorial + OSM raster no fallback causou diferenças visuais entre os motores.
+- Alidade Smooth vetorial/raster nos mapas público e de cadastro aproxima o visual da referência; shell, controles, camadas e recuperação Firefox/Chromium preservados. CARTO Voyager exato exige chave própria; nenhuma credencial da referência foi reutilizada.
+- Corrige conversão de zoom/limites entre MapLibre e Leaflet, centralização de ocorrências e enquadramento territorial; elimina créditos vetoriais duplicados. Sem novas dependências.
+- `harness frontend`: lint, 49 testes, build, 440,38 kB inicial; E2E: 34 passados/zero ignorados, incluindo tiles reais e comparação da câmera nos dois motores. Firefox Playwright com janela/fallback 2D: 22 tiles HTTP 200, zero erros, cadastro nas três categorias.
+- Uso sem autenticação limitado pelo Stadia Maps a localhost/127.0.0.1. Outros hosts exigem domínio autorizado/chave própria; nenhuma conta/assinatura ou publicação foi criada. Fontes, evidências e limites em `docs/compatibilidade-mapas.md`.
+
+## 2026-10-11 — Recuperação de mapas Firefox/Chromium
+
+- MapLibre mantém prioridade quando WebGL2 funciona. Falha de inicialização, erro antes de pronto, perda de contexto GPU e espera vetorial acima de oito segundos acionam Leaflet automaticamente nos dois mapas.
+- Reutiliza raster na mesma instância após falha; conserva filtros/raio e câmera dos dois mapas, cancela watchdog ao sair e não cobre o mapa pronto por erro isolado de tile. Regressão verifica o ponto de cadastro desenhado após perda de contexto.
+- Raster só anuncia prontidão após tile realmente recebido; indisponibilidade dos dois provedores mantém erro, lista e coordenadas manuais.
+- `harness frontend`: lint, 49 testes e build passaram; bundle inicial 441,15 kB/limite 500 kB, engines e CSS continuam lazy. E2E: 32 passados, zero ignorados; inclui recuperação, cadastro isolado e 390/320 px nos dois renderizadores.
+- Firefox instalado 157.0.1 com janela/perfil temporário validou tiles reais, marcadores e cadastro nas três categorias, sem alterar perfil pessoal/GPU. A falha original desse perfil não foi reproduzida; falhas concretas de recuperação foram reproduzidas antes da correção. Detalhes em `docs/compatibilidade-mapas.md`.
+- Backend, banco, publicação e ingestão de dados continuam fora deste incremento.
+
 ## 2026-10-10 — Compatibilidade, relatório e detalhes inline
 
 ### Adicionado e corrigido

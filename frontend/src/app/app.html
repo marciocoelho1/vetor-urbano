@@ -405,7 +405,7 @@
                   isDemonstrationOnly() ? 'ocorrências fictícias' : 'ocorrências na consulta'
                 }}</span>
               </div>
-              <span class="map-region">Centro do Rio · visualização demonstrativa</span>
+              <span class="map-region">Região Metropolitana do Rio · dados fictícios</span>
             </div>
             <div class="map-tools">
               <button
@@ -543,14 +543,15 @@
                       class="map-radius-slider"
                       type="range"
                       min="100"
-                      max="5000"
+                      max="25000"
                       step="100"
                       [value]="radiusMeters()"
                       [attr.aria-valuetext]="radiusMeters() + ' metros'"
                       (input)="setRadiusMeters($any($event.target).value)"
                     />
                     <p class="map-radius-hint">
-                      Use o scroll do mouse sobre este painel para ajustar em passos de 100 m.
+                      Clique no mapa para mudar o centro; segure e arraste para navegar. Use o
+                      scroll sobre este painel para ajustar o raio em passos de 100 m, até 25 km.
                     </p>
                     <p class="map-radius-center">
                       Centro: {{ searchCenter().longitude }}, {{ searchCenter().latitude }}
@@ -577,7 +578,7 @@
                     </details>
                     @if (radiusInvalid()) {
                       <p class="query-error" role="status">
-                        Confira o centro e o raio entre 100 e 5.000 m.
+                        Confira o centro e o raio entre 100 e 25.000 m.
                       </p>
                     }
                   </div>
@@ -646,7 +647,15 @@
           </div>
           <div class="map-legend" aria-label="Legenda do mapa">
             <span
-              ><i class="legend-dot occurrence-dot" aria-hidden="true"></i>Ocorrência fictícia</span
+              ><img class="legend-pin" src="maps/pins/transito.svg" alt="" />Trânsito fictício</span
+            >
+            <span
+              ><img class="legend-pin" src="maps/pins/seguranca.svg" alt="" />Segurança
+              fictícia</span
+            >
+            <span
+              ><img class="legend-pin" src="maps/pins/contingencia.svg" alt="" />Contingência
+              fictícia</span
             >
             <span
               ><i class="legend-dot poi-dot" aria-hidden="true"></i>Ponto de interesse
@@ -676,7 +685,7 @@
               >
             }
             <span class="legend-note"
-              >Código do tipo no marcador; tamanho indica somente a gravidade informada.</span
+              >Cor e ícone identificam a categoria; pin ampliado indica seleção.</span
             >
           </div>
 

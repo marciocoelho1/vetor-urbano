@@ -1,10 +1,285 @@
 import { expect, test } from '@playwright/test';
 
+test.beforeEach(async ({ page }, testInfo) => {
+  if (testInfo.title.startsWith('prefers the 2D map for software graphics')) return;
+  await page.addInitScript(() => {
+    // Exercise real WebGL rendering even on CI software GPUs. Only its identity
+    // is simulated; shaders, workers, canvas, tiles and interactions stay real.
+    const prototype = window.WebGL2RenderingContext?.prototype;
+    if (!prototype) return;
+    const getParameter = prototype.getParameter;
+    prototype.getParameter = function (parameter: number) {
+      if (parameter === 0x9246) return 'GPU acelerada simulada para QA';
+      return getParameter.call(this, parameter);
+    };
+  });
+});
+
+test('prefers the 2D map for software graphics even when WebGL2 is available', async ({ page }) => {
+  await mockRasterTiles(page);
+  await page.addInitScript(() => {
+    const prototype = WebGL2RenderingContext.prototype;
+    const getParameter = prototype.getParameter;
+    prototype.getParameter = function (parameter: number) {
+      if (parameter === 0x9246) return 'ANGLE (Google, Vulkan, SwiftShader Device)';
+      return getParameter.call(this, parameter);
+    };
+  });
+  await page.goto('/');
+  expect(await page.evaluate(() => !!document.createElement('canvas').getContext('webgl2'))).toBe(
+    true,
+  );
+  await expect(page.locator('#map-canvas.leaflet-container')).toBeVisible();
+  await expect(page.locator('.map-loading, .map-fallback')).toHaveCount(0);
+  await expect(page.locator('link[data-maplibre-style]')).toHaveCount(0);
+  await expect(page.locator('#map-canvas .occurrence-pin img').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Registrar ocorrência' }).click();
+  await page.locator('.category-option[data-category="TRANSITO"]').click();
+  await expect(page.locator('#report-map-canvas.leaflet-container')).toBeVisible();
+  await expect(page.locator('.report-map-status')).toHaveCount(0);
+});
+
+async function mockRasterTiles(page: import('@playwright/test').Page): Promise<void> {
+  await page.route('https://tiles.stadiamaps.com/tiles/alidade_bright/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#dbeafe"/></svg>',
+    }),
+  );
+}
+
+test('recovers both maps when the WebGL probe succeeds but the renderer context fails', async ({
+  page,
+}) => {
+  await mockRasterTiles(page);
+  await page.addInitScript(() => {
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (
+      this: HTMLCanvasElement,
+      ...args: unknown[]
+    ) {
+      if (args[0] === 'webgl2' && (args[1] as WebGLContextAttributes | undefined)?.stencil) {
+        return null;
+      }
+      return Reflect.apply(getContext, this, args);
+    } as typeof getContext;
+  });
+  await page.goto('/');
+  expect(await page.evaluate(() => !!document.createElement('canvas').getContext('webgl2'))).toBe(
+    true,
+  );
+  await expect(page.locator('#map-canvas.leaflet-container')).toBeVisible();
+  await expect(page.locator('#map-canvas .leaflet-tile-loaded').first()).toBeVisible();
+  await expect(page.locator('.map-fallback, .map-loading')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Registrar ocorrência' }).click();
+  await page.locator('.category-option[data-category="TRANSITO"]').click();
+  await expect(page.locator('#report-map-canvas.leaflet-container')).toBeVisible();
+  await expect(page.locator('.report-map-status')).toHaveCount(0);
+  const map = page.locator('#report-map-canvas');
+  const bounds = await map.boundingBox();
+  await map.click({ position: { x: bounds!.width / 2, y: bounds!.height / 2 } });
+  await expect(page.locator('input[name="longitude"]')).not.toHaveValue('');
+  await expect(page.locator('input[name="latitude"]')).not.toHaveValue('');
+});
+
 async function openMainMap(page: import('@playwright/test').Page): Promise<void> {
   await page.goto('/');
   await expect(page.locator('#map-canvas canvas.maplibregl-canvas')).toBeVisible();
   await expect(page.locator('.map-loading')).toHaveCount(0);
   await expect(page.locator('.map-fallback')).toHaveCount(0);
+}
+
+test('recovers both maps when the vector style is unavailable', async ({ page }) => {
+  await mockRasterTiles(page);
+  await page.route('**/maps/urban-style.json', (route) =>
+    route.fulfill({ status: 503, body: 'Unavailable' }),
+  );
+  await page.goto('/');
+  await expect(page.locator('#map-canvas.leaflet-container')).toBeVisible();
+  await expect(page.locator('.map-fallback, .map-loading')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Registrar ocorrência' }).click();
+  await page.locator('.category-option[data-category="TRANSITO"]').click();
+  await expect(page.locator('#report-map-canvas.leaflet-container')).toBeVisible();
+  await expect(page.locator('.report-map-status')).toHaveCount(0);
+});
+
+test('leaves loading for the 2D map when the vector provider never responds', async ({ page }) => {
+  await mockRasterTiles(page);
+  await page.route('**/maps/urban-style.json', () => {});
+  await page.goto('/');
+  await expect(page.locator('#map-canvas.leaflet-container')).toBeVisible({ timeout: 12_000 });
+  await expect(page.locator('.map-fallback, .map-loading')).toHaveCount(0);
+});
+
+test('keeps the list and an honest error state when both map providers fail', async ({ page }) => {
+  await page.route('**/maps/urban-style.json', (route) =>
+    route.fulfill({ status: 503, body: 'Unavailable' }),
+  );
+  await page.route('https://tiles.stadiamaps.com/tiles/alidade_bright/**', (route) =>
+    route.fulfill({ status: 503, body: 'Unavailable' }),
+  );
+  await page.goto('/');
+  await expect(page.locator('#map-canvas.leaflet-container')).toBeVisible();
+  await expect(page.locator('#map-canvas .leaflet-tile-loaded')).toHaveCount(0);
+  await expect(page.locator('.map-fallback')).toBeVisible();
+  await expect(page.locator('.result-list > li')).toHaveCount(25);
+  await page.getByRole('button', { name: 'Registrar ocorrência' }).click();
+  await page.locator('.category-option[data-category="TRANSITO"]').click();
+  await expect(page.locator('.report-map-error')).toContainText('indisponível');
+  await expect(page.locator('input[name="longitude"]')).toBeEditable();
+});
+
+test('recovers from a lost GPU context without losing the radius filter', async ({ page }) => {
+  await mockRasterTiles(page);
+  await openMainMap(page);
+  await page.locator('.result-item').first().click();
+  await page.getByLabel('Filtrar por raio').check();
+  await page.locator('#map-radius-slider').fill('700');
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const angular = (
+          window as unknown as {
+            ng: { getComponent: (node: Element) => { map: import('maplibre-gl').Map } };
+          }
+        ).ng;
+        return angular.getComponent(document.querySelector('app-root')!).map.isMoving();
+      }),
+    )
+    .toBe(false);
+  const vectorBounds = await page.evaluate(() => {
+    const angular = (
+      window as unknown as {
+        ng: { getComponent: (node: Element) => { map: import('maplibre-gl').Map } };
+      }
+    ).ng;
+    const map = angular.getComponent(document.querySelector('app-root')!).map;
+    const bounds = map.getBounds().toArray();
+    map.getCanvas().getContext('webgl2')!.getExtension('WEBGL_lose_context')!.loseContext();
+    return bounds;
+  });
+  await expect(page.locator('#map-canvas.leaflet-container')).toBeVisible();
+  await expect(page.locator('.map-fallback, .map-loading')).toHaveCount(0);
+  await expect(page.locator('#map-radius-slider')).toHaveValue('700');
+  await expect(page.locator('.radius-legend-note')).toContainText('700 m');
+  const rasterBounds = await page.evaluate(() => {
+    const angular = (
+      window as unknown as {
+        ng: { getComponent: (node: Element) => { fallbackMap: import('leaflet').Map } };
+      }
+    ).ng;
+    const bounds = angular
+      .getComponent(document.querySelector('app-root')!)
+      .fallbackMap.getBounds();
+    return [
+      [bounds.getWest(), bounds.getSouth()],
+      [bounds.getEast(), bounds.getNorth()],
+    ];
+  });
+  for (let corner = 0; corner < 2; corner++) {
+    for (let axis = 0; axis < 2; axis++) {
+      expect(rasterBounds[corner][axis]).toBeCloseTo(vectorBounds[corner][axis], 4);
+    }
+  }
+});
+
+test('preserves the report bounds and selected point after losing its GPU context', async ({
+  page,
+}) => {
+  await mockRasterTiles(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Registrar ocorrência' }).click();
+  await page.locator('.category-option[data-category="TRANSITO"]').click();
+  await expect(page.locator('#report-map-canvas canvas.maplibregl-canvas')).toBeVisible();
+  await expect(page.locator('.report-map-status, .report-map-error')).toHaveCount(0);
+  await page.locator('input[name="longitude"]').fill('-43.6');
+  await page.locator('input[name="latitude"]').fill('-22.9');
+  const vectorBounds = await page.evaluate(() => {
+    const angular = (
+      window as unknown as {
+        ng: { getComponent: (node: Element) => { reportMap: import('maplibre-gl').Map } };
+      }
+    ).ng;
+    const map = angular.getComponent(document.querySelector('app-root')!).reportMap;
+    map.jumpTo({ center: [-43.6, -22.9], zoom: 16.2 });
+    const bounds = map.getBounds().toArray();
+    map.getCanvas().getContext('webgl2')!.getExtension('WEBGL_lose_context')!.loseContext();
+    return bounds;
+  });
+  await expect(page.locator('#report-map-canvas.leaflet-container')).toBeVisible();
+  await expect(page.locator('.report-map-status, .report-map-error')).toHaveCount(0);
+  await expect(page.locator('input[name="longitude"]')).toHaveValue('-43.6');
+  await expect(page.locator('input[name="latitude"]')).toHaveValue('-22.9');
+  const rasterBounds = await page.evaluate(() => {
+    const angular = (
+      window as unknown as {
+        ng: { getComponent: (node: Element) => { reportFallbackMap: import('leaflet').Map } };
+      }
+    ).ng;
+    const bounds = angular
+      .getComponent(document.querySelector('app-root')!)
+      .reportFallbackMap.getBounds();
+    return [
+      [bounds.getWest(), bounds.getSouth()],
+      [bounds.getEast(), bounds.getNorth()],
+    ];
+  });
+  for (let corner = 0; corner < 2; corner++) {
+    for (let axis = 0; axis < 2; axis++) {
+      expect(rasterBounds[corner][axis]).toBeCloseTo(vectorBounds[corner][axis], 4);
+    }
+  }
+
+  await expect
+    .poll(() =>
+      page.locator('#report-map-canvas').evaluate((host) => {
+        const canvas = host.querySelector('.leaflet-overlay-pane canvas') as HTMLCanvasElement;
+        if (!canvas) return 0;
+        const rect = canvas.getBoundingClientRect();
+        const hostRect = host.getBoundingClientRect();
+        const x = Math.round(
+          ((hostRect.x + hostRect.width / 2 - rect.x) / rect.width) * canvas.width,
+        );
+        const y = Math.round(
+          ((hostRect.y + hostRect.height / 2 - rect.y) / rect.height) * canvas.height,
+        );
+        const pixels = canvas.getContext('2d')!.getImageData(x - 10, y - 10, 20, 20).data;
+        return Array.from(pixels).filter((value, index) => index % 4 === 3 && value > 0).length;
+      }),
+    )
+    .toBeGreaterThan(0);
+});
+
+for (const failure of ['GPU', 'style']) {
+  test(`recovers a report-only ${failure} failure independently of the main map`, async ({
+    page,
+  }) => {
+    await mockRasterTiles(page);
+    await openMainMap(page);
+    if (failure === 'style') {
+      await page.evaluate(() => {
+        // The shared style is cached; fail only the report's loader invocation.
+        const app = (window as any).ng.getComponent(document.querySelector('app-root'));
+        app.loadUrbanStyle = () => Promise.reject(new Error('Estilo do cadastro indisponível.'));
+      });
+    } else {
+      await page.evaluate(() => {
+        const getContext = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function (
+          this: HTMLCanvasElement,
+          ...args: unknown[]
+        ) {
+          if (args[0] === 'webgl2' && this.closest('#report-map-canvas')) return null;
+          return Reflect.apply(getContext, this, args);
+        } as typeof getContext;
+      });
+    }
+    await page.getByRole('button', { name: 'Registrar ocorrência' }).click();
+    await page.locator('.category-option[data-category="TRANSITO"]').click();
+    await expect(page.locator('#report-map-canvas.leaflet-container')).toBeVisible();
+    await expect(page.locator('.report-map-status, .report-map-error')).toHaveCount(0);
+  });
 }
 
 test('starts a real WebGL2 MapLibre map and keeps its worker available', async ({
@@ -34,6 +309,19 @@ test('starts a real WebGL2 MapLibre map and keeps its worker available', async (
   await expect(page.locator('link[data-maplibre-style]')).toHaveCount(1);
   expect(mapStyleResponses).toContain(200);
   expect(pageErrors).toEqual([]);
+  await expect(page.locator('#map-canvas .maplibregl-ctrl-attrib')).toContainText('Stadia Maps');
+  const provider = await page.request.get('/maps/raster-provider.json');
+  expect(provider.ok()).toBe(true);
+  expect((await provider.json()).tileUrl).toContain('/tiles/alidade_bright/');
+  const basemapName = await page.evaluate(() => {
+    const angular = (
+      window as unknown as {
+        ng: { getComponent: (node: Element) => { map: import('maplibre-gl').Map } };
+      }
+    ).ng;
+    return angular.getComponent(document.querySelector('app-root')!).map.getStyle().name;
+  });
+  expect(basemapName).toMatch(/Vetor Urbano/i);
 
   await page.screenshot({
     path: `test-results/${browserName}-mapa-desktop.png`,
@@ -50,7 +338,7 @@ test('keeps the radius prompt readable and supports keyboard, wheel, and radius 
 
   await page.getByLabel('Filtrar por raio').check();
   const range = page.locator('.map-radius-panel input[type="range"]');
-  await expect(range).toHaveValue('100');
+  await expect(range).toHaveValue('1000');
   await page.getByRole('button', { name: 'Escolher centro no mapa' }).click();
   await expect(page.locator('.map-pick-prompt')).toBeVisible();
   await expect(page.locator('.map-radius-panel')).toHaveCount(0);
@@ -68,9 +356,9 @@ test('keeps the radius prompt readable and supports keyboard, wheel, and radius 
 
   await range.focus();
   await page.keyboard.press('ArrowRight');
-  await expect(range).toHaveValue('200');
+  await expect(range).toHaveValue('1100');
   await page.keyboard.press('End');
-  await expect(range).toHaveValue('5000');
+  await expect(range).toHaveValue('25000');
   await page.keyboard.press('Home');
   await expect(range).toHaveValue('100');
 
@@ -97,7 +385,7 @@ test('opens result details inline, toggles closed, and caps simultaneous panels 
   await page.locator('[data-filter="poi:ESTADIO"]').check();
 
   const rows = page.locator('.result-list > li');
-  await expect(rows).toHaveCount(6);
+  await expect(rows).toHaveCount(77);
   for (let index = 0; index < 5; index += 1) {
     const row = rows.nth(index);
     const toggle = row.locator('.record-detail-button');
@@ -235,12 +523,14 @@ test('supports the skip link, keyboard focus, and narrow mobile widths', async (
   });
 });
 
-test('uses the lazy 2D map when Firefox has no WebGL2 context', async ({ page, browserName }) => {
-  test.skip(browserName !== 'firefox', 'The no-WebGL fallback is specific to Gecko QA.');
+test('uses the lazy 2D map when the browser has no WebGL2 context', async ({
+  page,
+  browserName,
+}) => {
   const tileRequests: string[] = [];
   const styleResponses: number[] = [];
   const providerResponses: number[] = [];
-  await page.route('https://tile.openstreetmap.org/**', async (route) => {
+  await page.route('https://tiles.stadiamaps.com/tiles/alidade_bright/**', async (route) => {
     tileRequests.push(route.request().url());
     await route.fulfill({
       status: 200,
@@ -273,14 +563,32 @@ test('uses the lazy 2D map when Firefox has no WebGL2 context', async ({ page, b
   await expect.poll(() => tileRequests.length).toBeGreaterThan(0);
   expect(styleResponses).toContain(200);
   expect(providerResponses).toContain(200);
+  expect(tileRequests.every((url) => url.includes('/tiles/alidade_bright/'))).toBe(true);
+  await expect(page.locator('#map-canvas .leaflet-control-attribution')).toContainText(
+    'Stadia Maps',
+  );
+  await expect(page.locator('#map-canvas .leaflet-control-attribution')).toContainText(
+    'OpenMapTiles',
+  );
   expect(
-    await page
-      .locator(
-        '#map-canvas .leaflet-overlay-pane canvas, #map-canvas .leaflet-overlay-pane path.leaflet-interactive',
-      )
-      .count(),
+    await page.locator('#map-canvas .leaflet-marker-pane .occurrence-pin img').count(),
   ).toBeGreaterThan(0);
-  await page.screenshot({ path: 'test-results/firefox-leaflet-fallback.png', fullPage: true });
+  await page.screenshot({
+    path: `test-results/${browserName}-leaflet-fallback.png`,
+    fullPage: true,
+  });
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(page.locator('#map-canvas.leaflet-container')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: `test-results/${browserName}-leaflet-mobile-${width}.png`,
+      fullPage: true,
+    });
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
 
   const heatmapButton = page.locator('.heatmap-button');
   await heatmapButton.click();
@@ -291,12 +599,12 @@ test('uses the lazy 2D map when Firefox has no WebGL2 context', async ({ page, b
   await expect(page.getByRole('group', { name: 'Raio personalizado' })).toBeVisible();
   await page.getByLabel('Filtrar por raio').check();
   const radius = page.locator('#map-radius-slider');
-  await expect(radius).toHaveValue('100');
+  await expect(radius).toHaveValue('1000');
   await radius.focus();
   await page.keyboard.press('ArrowRight');
-  await expect(radius).toHaveValue('200');
-  await expect(page.locator('.radius-legend-note')).toContainText('200 m');
-  await page.screenshot({ path: 'test-results/firefox-leaflet-radius.png', fullPage: true });
+  await expect(radius).toHaveValue('1100');
+  await expect(page.locator('.radius-legend-note')).toContainText('1100 m');
+  await page.screenshot({ path: `test-results/${browserName}-leaflet-radius.png`, fullPage: true });
 
   await page.locator('[data-module="territory"]').click();
   await page.locator('[data-filter="territory:CV"]').check();
@@ -312,6 +620,18 @@ test('uses the lazy 2D map when Firefox has no WebGL2 context', async ({ page, b
   await map.click({ position: { x: bounds!.width / 2, y: bounds!.height / 2 } });
   await expect(page.locator('input[name="longitude"]')).not.toHaveValue('');
   await expect(page.locator('input[name="latitude"]')).not.toHaveValue('');
+  for (const category of ['SEGURANCA', 'CONTINGENCIA']) {
+    await page.locator(`.category-option[data-category="${category}"]`).click();
+    await expect(page.locator('#report-map-canvas.leaflet-container')).toBeVisible();
+    await expect(page.locator('.report-map-status, .report-map-error')).toHaveCount(0);
+  }
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(page.locator('#report-map-canvas.leaflet-container')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  }
 });
 
 test('spaces period presets and aligns the detail button with the result icon', async ({
@@ -332,3 +652,368 @@ test('spaces period presets and aligns the detail button with the result icon', 
   expect(detail).not.toBeNull();
   expect(Math.abs(icon!.x - detail!.x)).toBeLessThanOrEqual(1);
 });
+
+test('loads the real Alidade Bright raster basemap in both public and report maps', async ({
+  page,
+  browserName,
+}) => {
+  const pageErrors: string[] = [];
+  const tileStatuses: number[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('response', (response) => {
+    if (response.url().includes('/tiles/alidade_bright/')) tileStatuses.push(response.status());
+  });
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'WebGL2RenderingContext', {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await page.goto('/');
+  const publicMap = page.locator('#map-canvas.leaflet-container');
+  await expect(publicMap).toBeVisible();
+  await expect(page.locator('.map-fallback, .map-loading')).toHaveCount(0);
+  await expect
+    .poll(() => publicMap.locator('.leaflet-tile:not(.leaflet-tile-loaded)').count())
+    .toBe(0);
+  expect(await publicMap.locator('.leaflet-tile-loaded').count()).toBeGreaterThan(0);
+  await expect
+    .poll(() =>
+      publicMap
+        .locator('.leaflet-tile-loaded')
+        .evaluateAll((tiles) => tiles.every((tile) => getComputedStyle(tile).opacity === '1')),
+    )
+    .toBe(true);
+
+  await expect(publicMap.locator('.leaflet-control-attribution')).toContainText('Stadia Maps');
+  await page.screenshot({
+    path: `test-results/${browserName}-smooth-raster-real.png`,
+    fullPage: true,
+  });
+
+  await page.getByRole('button', { name: 'Registrar ocorrência' }).click();
+  await page.locator('.category-option[data-category="TRANSITO"]').click();
+  const reportMap = page.locator('#report-map-canvas.leaflet-container');
+  await expect(reportMap).toBeVisible();
+  await expect(page.locator('.report-map-status, .report-map-error')).toHaveCount(0);
+  await expect
+    .poll(() => reportMap.locator('.leaflet-tile:not(.leaflet-tile-loaded)').count())
+    .toBe(0);
+  expect(await reportMap.locator('.leaflet-tile-loaded').count()).toBeGreaterThan(0);
+  await expect
+    .poll(() =>
+      reportMap
+        .locator('.leaflet-tile-loaded')
+        .evaluateAll((tiles) => tiles.every((tile) => getComputedStyle(tile).opacity === '1')),
+    )
+    .toBe(true);
+
+  await reportMap.click();
+  await expect(page.locator('input[name="longitude"]')).not.toHaveValue('');
+  await expect(page.locator('input[name="latitude"]')).not.toHaveValue('');
+  for (const category of ['SEGURANCA', 'CONTINGENCIA']) {
+    await page.locator(`.category-option[data-category="${category}"]`).click();
+    await expect(reportMap).toBeVisible();
+    await expect(page.locator('.report-map-status, .report-map-error')).toHaveCount(0);
+  }
+  await page.screenshot({
+    path: `test-results/${browserName}-smooth-cadastro-real.png`,
+    fullPage: true,
+  });
+  expect(tileStatuses.length).toBeGreaterThan(0);
+  expect(tileStatuses.every((status) => status === 200)).toBe(true);
+  expect(pageErrors).toEqual([]);
+});
+
+for (const engine of ['vector', 'raster'] as const) {
+  test(`selects radius centers by left click, pans by dragging, and reuses the ${engine} map`, async ({
+    page,
+  }, testInfo) => {
+    if (engine === 'raster') {
+      await mockRasterTiles(page);
+      await page.addInitScript(() => {
+        Object.defineProperty(window, 'WebGL2RenderingContext', {
+          configurable: true,
+          value: undefined,
+        });
+      });
+    }
+    await page.setViewportSize({ width: 1280, height: 820 });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    const started = Date.now();
+    await page.goto('/');
+    await expect(page.locator('.map-loading, .map-fallback')).toHaveCount(0);
+    const initialLoadMs = Date.now() - started;
+    const surface = page.locator(
+      engine === 'vector' ? '#map-canvas .maplibregl-canvas' : '#map-canvas',
+    );
+    await expect(surface).toBeVisible();
+    await surface.scrollIntoViewIfNeeded();
+    const box = (await surface.boundingBox())!;
+    const center = page.locator('.map-radius-center');
+    await page.getByLabel('Filtrar por raio').check();
+    const originalCenter = await center.textContent();
+    const x = box.x + box.width * 0.55;
+    const y = box.y + box.height * 0.4;
+    await page.mouse.click(x, y, { button: 'right' });
+    await expect(center).toHaveText(originalCenter!);
+    await page.mouse.click(x, y);
+    await expect(center).not.toHaveText(originalCenter!);
+    const picked = await center.textContent();
+    await page.mouse.click(x + 45, y + 25);
+    await expect(center).not.toHaveText(picked!);
+    const beforeDrag = await center.textContent();
+    const readCamera = () =>
+      page.evaluate(() => {
+        const app = (window as any).ng.getComponent(document.querySelector('app-root'));
+        const center = (app.map ?? app.fallbackMap).getCenter();
+        return [center.lng, center.lat];
+      });
+    const camera = await readCamera();
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 110, y + 55, { steps: 12 });
+    await page.mouse.up();
+    await expect.poll(readCamera).not.toEqual(camera);
+    await expect(center).toHaveText(beforeDrag!);
+    await page.locator('#map-radius-slider').fill('25000');
+    await expect(page.locator('.radius-legend-note')).toContainText('25000 m');
+    await page.getByLabel('Filtrar por raio').uncheck();
+    await page.mouse.click(x, y);
+    await page.getByLabel('Filtrar por raio').check();
+    await expect(center).toHaveText(beforeDrag!);
+    await page.getByLabel('Filtrar por raio').uncheck();
+    await expect(page.locator('.result-list > li')).toHaveCount(25);
+    await page.getByRole('checkbox', { name: 'Segurança', exact: true }).check();
+    await page.getByRole('checkbox', { name: 'Contingência', exact: true }).check();
+    await expect(page.locator('.result-list > li')).toHaveCount(75);
+    await page.getByRole('button', { name: 'Ver mancha térmica' }).click();
+    await page.evaluate(() => {
+      const app = (window as any).ng.getComponent(document.querySelector('app-root'));
+      const map = app.map ?? app.fallbackMap;
+      (window as any).__radiusMap = map;
+      // Frame all fixtures for the visual density check; this doesn't change the initial camera.
+      if (app.map)
+        map.fitBounds(
+          [
+            [-43.47, -22.94],
+            [-43.03, -22.74],
+          ],
+          { duration: 0, padding: 25 },
+        );
+      else
+        map.fitBounds(
+          [
+            [-22.94, -43.47],
+            [-22.74, -43.03],
+          ],
+          { animate: false, padding: [25, 25] },
+        );
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const app = (window as any).ng.getComponent(document.querySelector('app-root'));
+          return app.map
+            ? app.map.getLayoutProperty('demo-heatmap-events', 'visibility') === 'visible'
+            : app.fallbackMap.hasLayer(app.fallbackEventHeatLayer);
+        }),
+      )
+      .toBe(true);
+    if (engine === 'vector') {
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const map = (window as any).ng.getComponent(document.querySelector('app-root')).map;
+            return map.loaded() && !map.isMoving();
+          }),
+        )
+        .toBe(true);
+    }
+    await page.screenshot({
+      path: `test-results/${testInfo.project.name}-${engine}-metropolitan-heatmap.png`,
+    });
+    const beforeNavigation = await readCamera();
+    await page.getByRole('button', { name: 'Histórico', exact: true }).click();
+    const returning = Date.now();
+    await page.getByRole('button', { name: 'Mapa público', exact: true }).click();
+    await expect(surface).toBeVisible();
+    await expect(page.locator('.map-loading, .map-fallback')).toHaveCount(0);
+    const returnMs = Date.now() - returning;
+    expect(
+      await page.evaluate(() => {
+        const app = (window as any).ng.getComponent(document.querySelector('app-root'));
+        return (app.map ?? app.fallbackMap) === (window as any).__radiusMap;
+      }),
+    ).toBe(true);
+    expect(await readCamera()).toEqual(beforeNavigation);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const app = (window as any).ng.getComponent(document.querySelector('app-root'));
+          const element = document.getElementById('map-canvas')!;
+          const width = app.map ? app.map.getCanvas().clientWidth : app.fallbackMap.getSize().x;
+          return Math.abs(width - element.clientWidth);
+        }),
+      )
+      .toBeLessThanOrEqual(1);
+    expect(errors).toEqual([]);
+    await testInfo.attach('map-performance.json', {
+      body: JSON.stringify({
+        engine,
+        initialLoadMs,
+        returnMs,
+        network: engine === 'raster' ? 'mock tiles' : 'real provider',
+        note: 'Single local observation; not an SLA or a before/after benchmark.',
+      }),
+      contentType: 'application/json',
+    });
+  });
+}
+
+for (const engine of ['vector', 'raster'] as const) {
+  test(`renders category pins and fits custom period fields with ${engine}`, async ({
+    page,
+  }, testInfo) => {
+    if (engine === 'raster') {
+      await mockRasterTiles(page);
+      await page.addInitScript(() =>
+        Object.defineProperty(window, 'WebGL2RenderingContext', {
+          configurable: true,
+          value: undefined,
+        }),
+      );
+    }
+    await page.goto('/');
+    await expect(page.locator('.map-loading, .map-fallback')).toHaveCount(0);
+    for (const width of [1280, 390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.locator('[data-filter="period-custom"]').check();
+      const inputs = page.locator('.period-custom-options input');
+      await expect(inputs).toHaveCount(2);
+      await inputs.nth(0).fill('2026-10-01T08:00');
+      await inputs.nth(1).fill('2026-10-12T20:00');
+      const fits = await inputs.evaluateAll((nodes) =>
+        nodes.every((node) => {
+          const input = node.getBoundingClientRect();
+          const panel = node.closest('fieldset')!.getBoundingClientRect();
+          return input.left >= panel.left && input.right <= panel.right && input.width > 180;
+        }),
+      );
+      expect(fits).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({
+        path: `test-results/${testInfo.project.name}-${engine}-interval-${width}.png`,
+      });
+    }
+    await page.setViewportSize({ width: 1280, height: 844 });
+    await page.locator('[data-filter="period-1m"]').check();
+    await page.getByRole('checkbox', { name: 'Segurança', exact: true }).check();
+    await page.getByRole('checkbox', { name: 'Contingência', exact: true }).check();
+    await page.getByLabel('Filtrar por raio').check();
+    await expect(page.locator('#map-radius-slider')).toHaveValue('1000');
+    await page.locator('#map-radius-slider').focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('#map-radius-slider')).toHaveValue('1100');
+    await page.getByLabel('Filtrar por raio').uncheck();
+    const points = await page.evaluate(() => {
+      const app = (window as any).ng.getComponent(document.querySelector('app-root'));
+      return ['TRANSITO', 'SEGURANCA', 'CONTINGENCIA'].map((category) =>
+        app.allPoints().find((p: any) => p.category === category),
+      );
+    });
+    for (const point of points) {
+      await page.evaluate((point) => {
+        const app = (window as any).ng.getComponent(document.querySelector('app-root'));
+        if (app.map) app.map.jumpTo({ center: point.coordinates, zoom: 14 });
+        else
+          app.fallbackMap.setView([point.coordinates[1], point.coordinates[0]], 15, {
+            animate: false,
+          });
+      }, point);
+      if (engine === 'vector') {
+        await expect
+          .poll(() =>
+            page.evaluate((point) => {
+              const map = (window as any).ng.getComponent(document.querySelector('app-root')).map;
+              const pixel = map.project(point.coordinates);
+              return map
+                .queryRenderedFeatures(
+                  [
+                    [pixel.x - 18, pixel.y - 42],
+                    [pixel.x + 18, pixel.y + 3],
+                  ],
+                  { layers: ['demo-occurrence-pins'] },
+                )
+                .some((feature: any) => feature.properties.recordId === point.id);
+            }, point),
+          )
+          .toBe(true);
+        expect(
+          await page.evaluate(() => {
+            const map = (window as any).ng.getComponent(document.querySelector('app-root')).map;
+            return map.getPaintProperty('water', 'fill-color');
+          }),
+        ).toBe('#b3d5f2');
+      } else {
+        const pin = page.locator(
+          `.occurrence-pin[title="${point.name} · ocorrência fictícia"] img`,
+        );
+        await expect(pin).toBeVisible();
+        await expect(pin).toHaveAttribute('src', `maps/pins/${point.category.toLowerCase()}.svg`);
+        await page.evaluate((point) => {
+          const app = (window as any).ng.getComponent(document.querySelector('app-root'));
+          app.searchCenter.set({
+            longitude: String(point.coordinates[0]),
+            latitude: String(point.coordinates[1]),
+          });
+        }, point);
+        await page.getByLabel('Filtrar por raio').check();
+        await expect(pin).toBeVisible();
+        await page.evaluate((point) => {
+          const app = (window as any).ng.getComponent(document.querySelector('app-root'));
+          (window as any).__preservedPin = app.fallbackPointMarkers.get(point.id);
+        }, point);
+        await page.locator('#map-radius-slider').fill('1200');
+        await expect
+          .poll(() =>
+            page.evaluate((point) => {
+              const app = (window as any).ng.getComponent(document.querySelector('app-root'));
+              return (
+                app.fallbackRadiusLayer.getLayers()[0]?.getRadius() === 1200 &&
+                app.fallbackPointMarkers.get(point.id) === (window as any).__preservedPin
+              );
+            }, point),
+          )
+          .toBe(true);
+        await page.getByLabel('Filtrar por raio').uncheck();
+      }
+      if (engine === 'vector') {
+        const pixel = await page.evaluate((point) => {
+          const app = (window as any).ng.getComponent(document.querySelector('app-root'));
+          return app.map.project(point.coordinates);
+        }, point);
+        await page.locator('#map-canvas').click({ position: { x: pixel.x, y: pixel.y - 22 } });
+        await expect(page.locator('.maplibregl-popup-content')).toContainText(point.name);
+      } else {
+        await page
+          .locator(`.occurrence-pin[title="${point.name} · ocorrência fictícia"] img`)
+          .click();
+        await expect(page.locator('.leaflet-popup-content')).toContainText(point.name);
+      }
+      await page.locator('.maplibregl-popup-close-button, .leaflet-popup-close-button').click();
+      await expect(page.locator('.maplibregl-popup, .leaflet-popup')).toHaveCount(0);
+      await page.locator('#map-canvas').screenshot({
+        path: `test-results/${testInfo.project.name}-${engine}-pin-${point.category}.png`,
+      });
+    }
+  });
+}

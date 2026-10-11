@@ -1,6 +1,6 @@
 # Auditoria de fontes cartográficas e territoriais
 
-Atualizado em 10/10/2026. Esta auditoria registra a triagem das fontes, as geometrias agora disponibilizadas para a demonstração local e as limitações ainda não verificadas.
+Atualizado em 11/10/2026. Esta auditoria registra a triagem das fontes, as geometrias agora disponibilizadas para a demonstração local e as limitações ainda não verificadas.
 
 ## Mapa de presença — Dados de Riscos
 
@@ -24,17 +24,29 @@ As fontes usam conceitos, métodos e datas diferentes. Contagens ou nomes pareci
 
 **Decisão aprovada para a demonstração local:** exibir a camada extraída do mapa Dados de Riscos, com filtros por grupo, busca e atribuição explícita à fonte. O rótulo informa “classificação segundo a fonte”, base julho/2026 e ressalva que a camada não confirma a situação atual nem limites municipais oficiais. “Área neutra” será apresentada como classificação da fonte, não como afirmação independente de neutralidade ou segurança. O usuário autorizou o uso dos polígonos. A camada é demonstrativa; qualquer publicação/uso operacional requer revisão de atualização, cobertura, precisão e comunicação de risco.
 
-## Mapa-base demonstrativo
+## Mapa-base demonstrativo — incremento anterior em 11/10/2026
 
-O renderizador principal é MapLibre GL JS com o estilo vetorial Bright da instância pública OpenFreeMap, cujos dados cartográficos incluem OpenStreetMap/OpenMapTiles e Natural Earth. A atribuição permanece visível; o estilo não exige chave de API. O serviço é fornecido “as is”, sem garantia de disponibilidade, e seus termos exigem que quem integra tenha ao menos 18 anos e possa celebrar o acordo.
+A referência Dados de Riscos usa tiles **CARTO Voyager**, identificados na chamada `L.tileLayer` do HTML consultado em 11/10/2026. O CARTO passou a exigir chave própria; seu repositório oficial informa marca d'água para requisições raster sem chave e descontinuação gradual do raster. Nenhuma chave da referência foi copiada.
 
-A camada territorial é um GeoJSON local do projeto, não fornecido pelo OpenStreetMap nem validado por ele. Estilo/base cartográfica, camada de territórios e dados de ocorrências são elementos distintos.
+Nesse incremento anterior, a demonstração passou a usar **Alidade Smooth (Stadia Maps)**, uma aproximação do mapa suave de referência: base clara, cores discretas e rótulos leves para destacar as camadas do produto. O estilo deriva de Positron/CartoDB; não se declara reprodução exata de Voyager. MapLibre usa o estilo vetorial oficial e Leaflet usa raster da mesma família, mantendo pontos, polígonos, raio e formulário existentes.
 
-Quando o navegador não fornece WebGL2, o protótipo carrega Leaflet 1.9.4 e seus estilos sob demanda e usa tiles raster. A configuração fica em `frontend/public/maps/raster-provider.json`, fora do JavaScript, para permitir substituir URL, zoom e atribuição sem recompilar o bundle. O padrão usa o serviço raster padrão do OpenStreetMap, atribui `© OpenStreetMap contributors` e inclui o link “Corrigir mapa”. O mapa solicita apenas os tiles da área visualizada; não há download em massa nem prefetch configurado.
+- Vetorial: `https://tiles.stadiamaps.com/styles/alidade_smooth.json`.
+- Raster: `https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}.png`, em `frontend/public/maps/raster-provider.json`.
+- Dados: OpenStreetMap (ODbL), esquema OpenMapTiles; estilo/derivações e serviço conforme [atribuição Stadia Maps](https://stadiamaps.com/attribution/) e [termos](https://stadiamaps.com/terms-of-service/).
+- Atribuição visível: Stadia Maps, OpenMapTiles e OpenStreetMap. No MapLibre vem do estilo, sem duplicação; no Leaflet vem da configuração raster.
+- Data de consulta: 11/10/2026. Nenhum dado de ocorrência externa foi ingerido nesta alteração.
+- **Limite real da configuração:** Stadia dispensa autenticação no desenvolvimento em `localhost`/`127.0.0.1`, sujeito a rate limits. Outros hosts (incluindo IP de LAN) exigem domínio autorizado ou chave própria. Nenhuma conta/contrato foi criado. Publicação continua pendente de provedor, autenticação, termos e capacidade.
+- A camada territorial é o GeoJSON local previamente autorizado; estilo/base cartográfica, territórios e ocorrências continuam distintos.
 
-Smoke test independente em Firefox 157 headless, com WebGL2 desativado: os tiles do mapa público e do mapa de cadastro retornaram HTTP 200, o cabeçalho `Referer` foi enviado e o User-Agent era o padrão do Firefox. As verificações Playwright da suíte interceptam tiles para repetibilidade; o smoke test independente confirmou também o serviço real durante esta sessão. Isso não é garantia de disponibilidade, SLA ou aprovação para uso público/escala. A política do tile server recomenda atribuição, requisições de navegador com cabeçalhos válidos, respeito ao cache e ausência de bulk download/prefetch; revisar a política e definir contato/provedor antes da publicação.
+Verificação: testes de navegador exercitam WebGL2 real e raster real nos dois motores, além de simulações de falhas. Evidências e limitações atuais em `compatibilidade-mapas.md`. O serviço depende da rede; esta execução não comprova disponibilidade futura ou SLA. Não há prefetch/download em massa.
 
-Referências oficiais do mapa-base: política de uso dos tiles OpenStreetMap (`https://operations.osmfoundation.org/policies/tiles/`), copyright/licença (`https://www.openstreetmap.org/copyright`) e termos do OpenFreeMap (`https://openfreemap.org/tos/`).
+Fontes primárias: [estilo e URLs](https://docs.stadiamaps.com/map-styles/alidade-smooth/), [autenticação e limites locais](https://docs.stadiamaps.com/authentication/), [CARTO basemap-styles](https://github.com/CartoDB/basemap-styles), [CARTO termos](https://carto.com/legal/basemap-terms/index.html).
+
+## Mapa-base e pins — atualização atual em 11/10/2026
+
+A solicitação seguinte substituiu Smooth por **Alidade Bright**: estilo vetorial local com água azul/áreas verdes/vias brancas e raster Bright de paleta semelhante. Referência continua Leaflet/CARTO Voyager; não houve migração para Google nem reutilização de chave. JSON vetorial deriva de `https://tiles.stadiamaps.com/styles/alidade_bright.json`; raster usa `https://tiles.stadiamaps.com/tiles/alidade_bright/{z}/{x}/{y}.png`. Atribuição, dependência de rede e limites de autenticação do Stadia permanecem.
+
+Ícones locais de categoria são Material Design Icons (Apache 2.0), obtidos do repositório oficial; forma do pin é autoral, inspirada na referência Pixabay fornecida. Origens, licenças, data de consulta, paletas e limites completos em [mapas-referencia-visual.md](mapas-referencia-visual.md). A massa de eventos é sintética: Segurança conserva as posições; Trânsito/Contingência usam sorteio por ID em recortes urbanos em terra, sem incorporar fonte externa ou certificar limites municipais.
 
 ## Próximo gate
 

@@ -696,6 +696,26 @@
   gap: 9px;
   margin-top: 10px;
 }
+.period-custom-options {
+  grid-template-columns: minmax(0, 1fr);
+}
+.period-custom-options .field,
+.period-time-options .field {
+  min-width: 0;
+}
+.period-custom-options input,
+.period-time-options input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 0.76rem;
+}
+@media (max-width: 420px) {
+  .period-time-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .period-custom-options .query-error {
   grid-column: 1 / -1;
 }

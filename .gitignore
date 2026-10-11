@@ -22,3 +22,16 @@ coverage/
 .DS_Store
 Thumbs.db
 *.log
+
+# Local worktrees and extraction outputs (sources/evidence stay versioned)
+.worktrees/
+mapa-rj-extraction/*
+!mapa-rj-extraction/LEIA-ME.md
+!mapa-rj-extraction/extract.py
+!mapa-rj-extraction/verificacao.json
+
+# Video tooling and caches
+**/.tools/
+**/.hyperframes/
+**/.thumbnails/
+**/.waveform-cache/

@@ -16,6 +16,7 @@ import {
   calendarRange,
   filterRecords,
   localDateTimeToInstant,
+  INITIAL_RADIUS_METERS,
   MAXIMUM_RADIUS_METERS,
   MINIMUM_RADIUS_METERS,
   RADIUS_STEP_METERS,
@@ -27,6 +28,7 @@ import {
   type SourceMetadata,
 } from './domain';
 import type { SpreadsheetSheet } from './xlsx-export';
+import { createMetropolitanDemoOccurrences, disperseDemoOccurrences } from './demo-occurrences';
 
 type Category = 'TRANSITO' | 'SEGURANCA' | 'CONTINGENCIA';
 type ModuleId = 'intelligence' | 'information' | 'territory';
@@ -90,7 +92,7 @@ type TerritoryGroup = {
   count: number;
 };
 
-const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/bright';
+// Keep this family in sync with maps/raster-provider.json: GPU fallback must preserve the basemap.
 const RASTER_MAP_PROVIDER_URL = 'maps/raster-provider.json';
 const TERRITORY_DATA_URL = 'maps/areas-territoriais.geojson';
 const SEARCH_RADIUS_COLOR = '#C4B5FD';
@@ -313,7 +315,7 @@ export class App implements AfterViewInit, OnDestroy {
   protected readonly timeStart = signal('');
   protected readonly timeEnd = signal('');
   protected readonly useRadius = signal(false);
-  protected readonly radiusMeters = signal(MINIMUM_RADIUS_METERS);
+  protected readonly radiusMeters = signal(INITIAL_RADIUS_METERS);
   protected readonly searchCenter = signal({
     longitude: String(CENTRAL_DO_BRASIL_CENTER[0]),
     latitude: String(CENTRAL_DO_BRASIL_CENTER[1]),
@@ -384,6 +386,7 @@ export class App implements AfterViewInit, OnDestroy {
   private fallbackPoiHeatLayer?: LeafletLayerGroup;
   private fallbackRadiusLayer?: LeafletLayerGroup;
   private fallbackTerritoryLayer?: LeafletLayerGroup;
+  private fallbackPointMarkers = new Map<string, import('leaflet').Marker>();
   private reportMap?: maplibregl.Map;
   private reportMapMarker?: maplibregl.Marker;
   private reportFallbackMap?: LeafletMap;
@@ -391,11 +394,17 @@ export class App implements AfterViewInit, OnDestroy {
   private reportMapInitPromise?: Promise<void>;
   private maplibre?: typeof import('maplibre-gl');
   private mapLibrariesPromise?: Promise<typeof import('maplibre-gl')>;
+  private mapInitPromise?: Promise<void>;
+  private useRasterMaps = false;
+  private stopMapMonitoring?: () => void;
+  private stopReportMapMonitoring?: () => void;
   private radiusCircleFactory?: typeof import('./radius-geometry').createRadiusCircle;
   private territoryLoadPromise?: Promise<void>;
   private playbackTimer?: ReturnType<typeof setInterval>;
+  private mapRefreshFrame?: number;
+  private mapResizeObserver?: ResizeObserver;
 
-  private readonly demoPoints: DemoPoint[] = [
+  private readonly demoPoints: DemoPoint[] = disperseDemoOccurrences([
     {
       id: 'demo-001',
       name: 'Sinalização sem funcionamento',
@@ -415,7 +424,7 @@ export class App implements AfterViewInit, OnDestroy {
     {
       id: 'demo-002',
       name: 'Interdição parcial simulada',
-      description: 'Registro de demonstração; não corresponde a uma ocorrência real.',
+      description: 'Ocorrência fictícia de demonstração; não corresponde a um evento real.',
       location: 'Glória, Rio de Janeiro',
       kind: 'occurrence',
       category: 'TRANSITO',
@@ -465,6 +474,7 @@ export class App implements AfterViewInit, OnDestroy {
       sourceId: 'demo',
       coordinates: [-43.2032, -22.9097],
     },
+    ...createMetropolitanDemoOccurrences(new Date()),
     {
       id: 'poi-001',
       name: 'Unidade de saúde demonstrativa',
@@ -491,7 +501,7 @@ export class App implements AfterViewInit, OnDestroy {
       sourceId: 'demo',
       coordinates: [-43.196, -22.895],
     },
-  ];
+  ]);
 
   protected readonly allPoints = computed(() => {
     const now = this.queryReferenceDate().getTime();
@@ -731,7 +741,11 @@ export class App implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.mapRefreshFrame !== undefined) cancelAnimationFrame(this.mapRefreshFrame);
+    this.mapResizeObserver?.disconnect();
     if (this.playbackTimer) clearInterval(this.playbackTimer);
+    this.stopMapMonitoring?.();
+    this.stopReportMapMonitoring?.();
     this.reportMapMarker?.remove();
     this.reportMap?.remove();
     this.reportFallbackMarker?.remove();
@@ -744,26 +758,13 @@ export class App implements AfterViewInit, OnDestroy {
     this.activeView.set(view);
     this.mapExpanded.set(false);
     this.reportStatus.set('');
-    if (view !== 'map') {
-      this.map?.remove();
-      this.map = undefined;
-      this.fallbackMap?.remove();
-      this.fallbackMap = undefined;
-      this.fallbackPointsLayer = undefined;
-      this.fallbackEventHeatLayer = undefined;
-      this.fallbackPoiHeatLayer = undefined;
-      this.fallbackRadiusLayer = undefined;
-      this.fallbackTerritoryLayer = undefined;
-      this.mapReady.set(false);
-      this.mapError.set(false);
-      this.mapErrorDetails.set('');
-    }
+    // The public map's section stays mounted: preserve its camera and downloaded tiles.
     requestAnimationFrame(() => {
       if (view === 'map') {
         const container = document.getElementById('map-canvas');
         if (container && this.map?.getContainer?.() === container) this.map.resize();
         else if (container && this.fallbackMap?.getContainer() === container) {
-          this.fallbackMap.invalidateSize();
+          this.resizeFallbackMap();
         } else if (container) void this.initializeMap();
       }
       if (view === 'report' && this.selectedCategory()) void this.initializeReportMap();
@@ -880,7 +881,7 @@ export class App implements AfterViewInit, OnDestroy {
   protected focusPoint(point: DemoPoint): void {
     this.selectedPointId.set(point.id);
     this.map?.flyTo({ center: point.coordinates, zoom: 14.5 });
-    this.fallbackMap?.flyTo([point.coordinates[1], point.coordinates[0]], 14.5);
+    this.fallbackMap?.flyTo([point.coordinates[1], point.coordinates[0]], 15.5);
     this.refreshMapData();
   }
 
@@ -912,11 +913,13 @@ export class App implements AfterViewInit, OnDestroy {
   }
 
   protected retryMap(): void {
+    this.stopMapMonitoring?.();
     this.map?.remove();
     this.map = undefined;
     this.fallbackMap?.remove();
     this.fallbackMap = undefined;
     this.fallbackPointsLayer = undefined;
+    this.fallbackPointMarkers.clear();
     this.fallbackEventHeatLayer = undefined;
     this.fallbackPoiHeatLayer = undefined;
     this.fallbackRadiusLayer = undefined;
@@ -937,8 +940,8 @@ export class App implements AfterViewInit, OnDestroy {
     this.map?.fitBounds(this.getTerritoryBounds(area), { maxZoom: 15, padding: 56 });
     if (this.fallbackMap && this.leaflet) {
       this.fallbackMap.fitBounds(this.leaflet.geoJSON(area).getBounds(), {
-        maxZoom: 15,
-        padding: [36, 36],
+        maxZoom: 16,
+        padding: [56, 56],
       });
     }
   }
@@ -997,9 +1000,12 @@ export class App implements AfterViewInit, OnDestroy {
       Number.isFinite(radius)
         ? Math.min(
             MAXIMUM_RADIUS_METERS,
-            MINIMUM_RADIUS_METERS +
-              Math.round((radius - MINIMUM_RADIUS_METERS) / RADIUS_STEP_METERS) *
-                RADIUS_STEP_METERS,
+            Math.max(
+              MINIMUM_RADIUS_METERS,
+              MINIMUM_RADIUS_METERS +
+                Math.round((radius - MINIMUM_RADIUS_METERS) / RADIUS_STEP_METERS) *
+                  RADIUS_STEP_METERS,
+            ),
           )
         : Number.NaN,
     );
@@ -1019,6 +1025,7 @@ export class App implements AfterViewInit, OnDestroy {
 
   protected toggleRadius(enabled: boolean): void {
     this.useRadius.set(enabled);
+    if (!enabled && this.mapPickPurpose() === 'radius') this.mapPickPurpose.set(null);
     this.refreshMapData();
   }
 
@@ -1038,7 +1045,7 @@ export class App implements AfterViewInit, OnDestroy {
 
   protected acceptMapPick(longitude: number, latitude: number): void {
     const purpose = this.mapPickPurpose();
-    if (!purpose) return;
+    if (!purpose && !this.useRadius()) return;
     if (purpose === 'report') {
       this.coordinates.set({ longitude: String(longitude), latitude: String(latitude) });
       this.pointConfirmed.set(true);
@@ -1050,6 +1057,11 @@ export class App implements AfterViewInit, OnDestroy {
     }
     this.mapPickPurpose.set(null);
     this.refreshMapData();
+  }
+
+  private handleMapClick(longitude: number, latitude: number, button = 0): void {
+    if (button !== 0) return;
+    this.acceptMapPick(longitude, latitude);
   }
 
   protected saveCurrentSearch(): void {
@@ -1700,6 +1712,10 @@ export class App implements AfterViewInit, OnDestroy {
     return this.mapLibrariesPromise;
   }
 
+  private loadUrbanStyle(): Promise<maplibregl.StyleSpecification> {
+    return import('./urban-map-style').then(({ loadUrbanMapStyle }) => loadUrbanMapStyle());
+  }
+
   private loadLeafletLibraries(): Promise<typeof import('leaflet')> {
     if (this.leaflet) return Promise.resolve(this.leaflet);
     if (!this.leafletLibrariesPromise) {
@@ -1760,7 +1776,16 @@ export class App implements AfterViewInit, OnDestroy {
     return this.rasterTileProviderPromise;
   }
 
-  private async initializeMap(): Promise<void> {
+  private initializeMap(): Promise<void> {
+    if (this.mapInitPromise) return this.mapInitPromise;
+    const initialization = this.createMainMap().finally(() => {
+      if (this.mapInitPromise === initialization) this.mapInitPromise = undefined;
+    });
+    this.mapInitPromise = initialization;
+    return initialization;
+  }
+
+  private async createMainMap(): Promise<void> {
     this.mapReady.set(false);
     this.mapError.set(false);
     this.mapErrorDetails.set('');
@@ -1769,42 +1794,54 @@ export class App implements AfterViewInit, OnDestroy {
       this.mapError.set(true);
       return;
     }
-    if (!this.supportsWebGL2()) {
-      this.mapErrorDetails.set('WebGL2 indisponível; carregando mapa 2D de compatibilidade.');
+    if (this.useRasterMaps || !this.supportsWebGL2()) {
+      this.mapErrorDetails.set('Carregando mapa 2D de compatibilidade.');
       await this.initializeLeafletMap();
       return;
     }
     try {
       const maplibre = await this.loadMapLibraries();
+      const style = await this.loadUrbanStyle();
       if (this.activeView() !== 'map' || !document.getElementById('map-canvas')) return;
       this.map = new maplibre.Map({
         container: 'map-canvas',
-        style: MAP_STYLE_URL,
+        style,
         center: CENTRAL_DO_BRASIL_CENTER,
         zoom: 12.2,
         minZoom: 9,
         maxZoom: 17,
         attributionControl: {
           compact: false,
-          customAttribution: [
-            '<a href="https://openfreemap.org/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a>',
-            '<a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer">© OpenMapTiles</a>',
-            '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>',
-            '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">© Natural Earth</a>',
-          ].join(' · '),
         },
       });
       this.map.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
-      this.map.on('error', (event) => {
-        this.mapErrorDetails.set(this.describeMapError(event.error));
-        this.mapError.set(true);
-      });
-      this.map.on('idle', () => this.mapReady.set(true));
+      const map = this.map;
+      this.stopMapMonitoring = this.monitorMap(
+        map,
+        () => {
+          if (this.map !== map) return;
+          this.mapError.set(false);
+          this.mapErrorDetails.set('');
+          this.mapReady.set(true);
+        },
+        (error) => {
+          if (this.map !== map) return;
+          const center = map.getCenter();
+          const zoom = map.getZoom();
+          this.mapErrorDetails.set(this.describeMapError(error));
+          this.useRasterMaps = true;
+          this.map = undefined;
+          map.remove();
+          this.mapReady.set(false);
+          void this.initializeLeafletMap([center.lng, center.lat], zoom);
+        },
+      );
       this.map.on('click', (event) => {
-        const purpose = this.mapPickPurpose();
-        if (purpose) this.acceptMapPick(event.lngLat.lng, event.lngLat.lat);
+        this.handleMapClick(event.lngLat.lng, event.lngLat.lat, event.originalEvent.button);
       });
+      this.observeMapSize();
       this.map.on('load', () => {
+        if (this.map !== map) return;
         this.map?.addSource('search-radius-source', {
           type: 'geojson',
           data: this.radiusGeoJson(),
@@ -1838,6 +1875,7 @@ export class App implements AfterViewInit, OnDestroy {
           id: 'demo-points-glow',
           type: 'circle',
           source: 'demo-points',
+          filter: ['==', ['get', 'selected'], true],
           paint: {
             'circle-radius': 13,
             'circle-color': '#10b981',
@@ -1849,6 +1887,7 @@ export class App implements AfterViewInit, OnDestroy {
           id: 'demo-points-dot',
           type: 'circle',
           source: 'demo-points',
+          filter: ['==', ['get', 'kind'], 'poi'],
           paint: {
             'circle-radius': [
               'case',
@@ -1872,9 +1911,24 @@ export class App implements AfterViewInit, OnDestroy {
           },
         });
         this.map?.addLayer({
+          id: 'demo-occurrence-pins',
+          type: 'symbol',
+          source: 'demo-points',
+          filter: ['==', ['get', 'kind'], 'occurrence'],
+          layout: {
+            'icon-image': ['get', 'category'],
+            'icon-size': ['case', ['==', ['get', 'selected'], true], 1.15, 1],
+            'icon-anchor': 'bottom',
+            'icon-offset': [0, 2],
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
+        });
+        this.map?.addLayer({
           id: 'demo-points-code',
           type: 'symbol',
           source: 'demo-points',
+          filter: ['==', ['get', 'kind'], 'poi'],
           layout: {
             'text-field': ['get', 'markerCode'],
             'text-font': ['Noto Sans Regular'],
@@ -1889,6 +1943,7 @@ export class App implements AfterViewInit, OnDestroy {
           },
         });
         this.map?.on('click', 'demo-points-dot', (event) => {
+          if (this.useRadius() || this.mapPickPurpose()) return;
           const properties = event.features?.[0]?.properties as Record<string, string> | undefined;
           if (!properties || !this.map) return;
           const content = document.createElement('div');
@@ -1913,6 +1968,22 @@ export class App implements AfterViewInit, OnDestroy {
             .setDOMContent(content)
             .addTo(this.map);
         });
+        this.map?.on('click', 'demo-occurrence-pins', (event) => {
+          if (this.useRadius() || this.mapPickPurpose() || !this.map) return;
+          const id = event.features?.[0]?.properties?.['recordId'];
+          const point = this.visiblePoints().find((point) => point.id === id);
+          if (!point) return;
+          new maplibre.Popup({ closeButton: true, offset: [0, -40] })
+            .setLngLat(point.coordinates)
+            .setDOMContent(this.createRasterPointPopup(point))
+            .addTo(this.map);
+        });
+        this.map?.on('mouseenter', 'demo-occurrence-pins', () => {
+          if (this.map) this.map.getCanvas().style.cursor = 'pointer';
+        });
+        this.map?.on('mouseleave', 'demo-occurrence-pins', () => {
+          if (this.map) this.map.getCanvas().style.cursor = '';
+        });
         this.map?.on('mouseenter', 'demo-points-dot', () => {
           if (this.map) this.map.getCanvas().style.cursor = 'pointer';
         });
@@ -1924,30 +1995,39 @@ export class App implements AfterViewInit, OnDestroy {
       });
     } catch (error: unknown) {
       this.mapErrorDetails.set(this.describeMapError(error));
-      this.mapError.set(true);
+      this.map?.remove();
+      this.map = undefined;
+      this.stopMapMonitoring?.();
+      this.useRasterMaps = true;
+      await this.initializeLeafletMap();
     }
   }
 
-  private async initializeLeafletMap(): Promise<void> {
+  private async initializeLeafletMap(
+    center: Coordinates = CENTRAL_DO_BRASIL_CENTER,
+    zoom = 12.2,
+  ): Promise<void> {
     try {
       const [leaflet, tileProvider] = await Promise.all([
         this.loadLeafletLibraries(),
         this.loadRasterTileProvider(),
       ]);
       const container = document.getElementById('map-canvas');
-      if (!container || this.activeView() !== 'map') return;
+      if (!container || this.activeView() !== 'map' || this.fallbackMap) return;
 
-      const [longitude, latitude] = CENTRAL_DO_BRASIL_CENTER;
+      const [longitude, latitude] = center;
       const map = leaflet
         .map(container, {
           center: [latitude, longitude],
-          zoom: 12.2,
-          minZoom: 9,
-          maxZoom: 19,
+          // MapLibre's world is 512 px at zoom 0; Leaflet's is 256 px.
+          zoom: zoom + 1,
+          zoomSnap: 0.1,
+          minZoom: 10,
+          maxZoom: 18,
           preferCanvas: this.supportsCanvas2D(),
           zoomControl: false,
         })
-        .setView([latitude, longitude], 12.2);
+        .setView([latitude, longitude], zoom + 1);
       this.fallbackMap = map;
       leaflet.control.zoom({ position: 'topright' }).addTo(map);
       this.fallbackPointsLayer = leaflet.layerGroup().addTo(map);
@@ -1956,16 +2036,24 @@ export class App implements AfterViewInit, OnDestroy {
       this.fallbackRadiusLayer = leaflet.layerGroup().addTo(map);
       this.fallbackTerritoryLayer = leaflet.layerGroup().addTo(map);
 
+      let loadedTiles = 0;
       leaflet
         .tileLayer(tileProvider.tileUrl, {
           maxZoom: tileProvider.maxZoom,
           attribution: tileProvider.attribution,
         })
-        .on('load', () => {
+        .on('tileload', () => {
           if (this.fallbackMap !== map) return;
+          loadedTiles += 1;
           this.mapReady.set(true);
           this.mapError.set(false);
           this.mapErrorDetails.set('');
+        })
+        .on('load', () => {
+          if (this.fallbackMap !== map || loadedTiles > 0) return;
+          this.mapReady.set(false);
+          this.mapErrorDetails.set('O provedor 2D não retornou nenhum tile visível.');
+          this.mapError.set(true);
         })
         .on('tileerror', (event) => {
           if (this.fallbackMap !== map || this.mapReady()) return;
@@ -1975,17 +2063,15 @@ export class App implements AfterViewInit, OnDestroy {
         .addTo(map);
 
       map.on('click', (event) => {
-        const purpose = this.mapPickPurpose();
-        if (purpose) this.acceptMapPick(event.latlng.lng, event.latlng.lat);
+        this.handleMapClick(event.latlng.lng, event.latlng.lat, event.originalEvent.button);
       });
+      this.observeMapSize();
       map.whenReady(() => {
         if (this.fallbackMap !== map) return;
         requestAnimationFrame(() => map.invalidateSize());
         this.updateFallbackMapLayers();
         this.installTerritoryLayer();
       });
-      this.updateFallbackMapLayers();
-      this.installTerritoryLayer();
     } catch (error: unknown) {
       this.mapReady.set(false);
       this.mapErrorDetails.set(this.describeMapError(error));
@@ -2020,12 +2106,13 @@ export class App implements AfterViewInit, OnDestroy {
   }
 
   private async createReportMap(container: HTMLElement): Promise<void> {
-    if (!this.supportsWebGL2()) {
+    if (this.useRasterMaps || !this.supportsWebGL2()) {
       await this.createReportLeafletMap(container);
       return;
     }
     try {
       const maplibre = await this.loadMapLibraries();
+      const style = await this.loadUrbanStyle();
       if (
         !container.isConnected ||
         document.getElementById('report-map-canvas') !== container ||
@@ -2036,43 +2123,43 @@ export class App implements AfterViewInit, OnDestroy {
 
       const reportMap = new maplibre.Map({
         container,
-        style: MAP_STYLE_URL,
+        style,
         center: CENTRAL_DO_BRASIL_CENTER,
         zoom: 13,
         minZoom: 9,
         maxZoom: 18,
         attributionControl: {
           compact: true,
-          customAttribution: [
-            '<a href="https://openfreemap.org/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a>',
-            '<a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer">© OpenMapTiles</a>',
-            '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>',
-          ].join(' · '),
         },
       });
       this.reportMap = reportMap;
       reportMap.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
 
-      let idle = false;
       reportMap.on('load', () => {
         if (this.reportMap !== reportMap) return;
         this.updateReportMapMarker();
       });
-      reportMap.on('idle', () => {
-        idle = true;
-        if (this.reportMap === reportMap) {
+      this.stopReportMapMonitoring = this.monitorMap(
+        reportMap,
+        () => {
+          if (this.reportMap !== reportMap) return;
           this.reportMapErrorDetails.set('');
           this.reportMapStatus.set('ready');
-        }
-      });
-      reportMap.on('error', () => {
-        if (!idle && this.reportMap === reportMap) {
-          this.reportMapStatus.set('error');
-          this.reportMapErrorDetails.set(
-            'O MapLibre reportou uma falha ao carregar estilo ou tiles.',
-          );
-        }
-      });
+        },
+        (error) => {
+          if (this.reportMap !== reportMap) return;
+          const center = reportMap.getCenter();
+          const zoom = reportMap.getZoom();
+          this.reportMapErrorDetails.set(this.describeMapError(error));
+          this.useRasterMaps = true;
+          this.reportMapMarker?.remove();
+          this.reportMapMarker = undefined;
+          this.reportMap = undefined;
+          reportMap.remove();
+          this.reportMapStatus.set('loading');
+          void this.createReportLeafletMap(container, [center.lng, center.lat], zoom);
+        },
+      );
       reportMap.on('click', (event) => {
         this.setCoordinate('longitude', event.lngLat.lng.toFixed(6));
         this.setCoordinate('latitude', event.lngLat.lat.toFixed(6));
@@ -2081,12 +2168,20 @@ export class App implements AfterViewInit, OnDestroy {
         );
       });
     } catch (error: unknown) {
-      this.reportMapStatus.set('error');
       this.reportMapErrorDetails.set(this.describeMapError(error));
+      this.reportMap?.remove();
+      this.reportMap = undefined;
+      this.stopReportMapMonitoring?.();
+      this.useRasterMaps = true;
+      await this.createReportLeafletMap(container);
     }
   }
 
-  private async createReportLeafletMap(container: HTMLElement): Promise<void> {
+  private async createReportLeafletMap(
+    container: HTMLElement,
+    center: Coordinates = CENTRAL_DO_BRASIL_CENTER,
+    zoom = 13,
+  ): Promise<void> {
     try {
       const [leaflet, tileProvider] = await Promise.all([
         this.loadLeafletLibraries(),
@@ -2100,28 +2195,36 @@ export class App implements AfterViewInit, OnDestroy {
         return;
       }
 
-      const [longitude, latitude] = CENTRAL_DO_BRASIL_CENTER;
+      const [longitude, latitude] = center;
       const map = leaflet
         .map(container, {
           center: [latitude, longitude],
-          zoom: 13,
-          minZoom: 9,
-          maxZoom: 18,
+          zoom: zoom + 1,
+          zoomSnap: 0.1,
+          minZoom: 10,
+          maxZoom: 19,
           preferCanvas: this.supportsCanvas2D(),
           zoomControl: false,
         })
-        .setView([latitude, longitude], 13);
+        .setView([latitude, longitude], zoom + 1);
       this.reportFallbackMap = map;
       leaflet.control.zoom({ position: 'topright' }).addTo(map);
+      let loadedTiles = 0;
       leaflet
         .tileLayer(tileProvider.tileUrl, {
           maxZoom: tileProvider.maxZoom,
           attribution: tileProvider.attribution,
         })
-        .on('load', () => {
+        .on('tileload', () => {
           if (this.reportFallbackMap !== map) return;
+          loadedTiles += 1;
           this.reportMapErrorDetails.set('');
           this.reportMapStatus.set('ready');
+        })
+        .on('load', () => {
+          if (this.reportFallbackMap !== map || loadedTiles > 0) return;
+          this.reportMapErrorDetails.set('O provedor 2D não retornou nenhum tile visível.');
+          this.reportMapStatus.set('error');
         })
         .on('tileerror', (event) => {
           if (this.reportFallbackMap !== map || this.reportMapStatus() === 'ready') return;
@@ -2189,6 +2292,7 @@ export class App implements AfterViewInit, OnDestroy {
   }
 
   private disposeReportMap(): void {
+    this.stopReportMapMonitoring?.();
     this.reportMapMarker?.remove();
     this.reportMapMarker = undefined;
     this.reportFallbackMarker?.remove();
@@ -2215,12 +2319,53 @@ export class App implements AfterViewInit, OnDestroy {
     return 'Falha desconhecida ao inicializar o mapa.';
   }
 
+  private monitorMap(
+    map: maplibregl.Map,
+    onReady: () => void,
+    onFailure: (error: unknown) => void,
+  ): () => void {
+    let active = true;
+    let ready = false;
+    const watchdog = setTimeout(
+      () => fail(new Error('O mapa vetorial não respondeu em 8 segundos.')),
+      8000,
+    );
+    const fail = (error: unknown) => {
+      if (!active) return;
+      active = false;
+      clearTimeout(watchdog);
+      onFailure(error);
+    };
+    map.on('idle', () => {
+      if (!active) return;
+      ready = true;
+      clearTimeout(watchdog);
+      onReady();
+    });
+    map.on('error', (event) => {
+      if (!ready) fail(event.error);
+    });
+    map.on('webglcontextlost', () => fail(new Error('O contexto gráfico do mapa foi perdido.')));
+    return () => {
+      active = false;
+      clearTimeout(watchdog);
+    };
+  }
+
   private supportsWebGL2(): boolean {
     if (typeof document === 'undefined' || typeof window.WebGL2RenderingContext === 'undefined') {
       return false;
     }
     try {
-      return document.createElement('canvas').getContext('webgl2') !== null;
+      const context = document.createElement('canvas').getContext('webgl2');
+      if (!context) return false;
+      // Software graphics passed the availability probe but stalled while panning.
+      // Privacy settings may hide the renderer; an unknown GPU keeps the vector path.
+      const details = context.getExtension?.('WEBGL_debug_renderer_info');
+      const renderer = details ? String(context.getParameter(details.UNMASKED_RENDERER_WEBGL)) : '';
+      return !/swiftshader|llvmpipe|softpipe|software rasterizer|basic render driver/i.test(
+        renderer,
+      );
     } catch {
       return false;
     }
@@ -2370,6 +2515,7 @@ export class App implements AfterViewInit, OnDestroy {
       firstSymbolLayer,
     );
     this.map.on('click', 'territory-polygons-fill', (event) => {
+      if (this.useRadius() || this.mapPickPurpose()) return;
       const properties = event.features?.[0]?.properties;
       const code = properties?.['f'] as TerritoryCode | undefined;
       const group = code ? TERRITORY_GROUP_BY_ID.get(code) : undefined;
@@ -2456,6 +2602,7 @@ export class App implements AfterViewInit, OnDestroy {
           },
           onEachFeature: (_feature, layer) => {
             layer.on('click', (event) => {
+              if (this.useRadius() || this.mapPickPurpose()) return;
               this.focusTerritory(area);
               this.leaflet
                 ?.popup({ closeButton: true })
@@ -2549,76 +2696,113 @@ export class App implements AfterViewInit, OnDestroy {
     ] as [LeafletLayerGroup, boolean][]) {
       if (visible && !map.hasLayer(layer)) layer.addTo(map);
       else if (!visible && map.hasLayer(layer)) map.removeLayer(layer);
-      layer.clearLayers();
+    }
+    eventHeatLayer.clearLayers();
+    poiHeatLayer.clearLayers();
+    const visible = this.visiblePoints();
+    const ids = new Set(visible.map((point) => point.id));
+    for (const [id, marker] of this.fallbackPointMarkers) {
+      if (ids.has(id)) continue;
+      pointsLayer.removeLayer(marker);
+      this.fallbackPointMarkers.delete(id);
     }
 
-    for (const point of this.visiblePoints()) {
+    for (const point of visible) {
       const [longitude, latitude] = point.coordinates;
       const color =
         point.kind === 'poi'
           ? '#a3e635'
           : point.category === 'TRANSITO'
-            ? '#38bdf8'
+            ? '#22c55e'
             : point.category === 'SEGURANCA'
-              ? '#fb7185'
-              : '#fbbf24';
-      const selected = this.selectedPointId() === point.id;
-      const marker = leaflet.circleMarker([latitude, longitude], {
-        radius: showHeat
-          ? point.kind === 'occurrence'
-            ? 26
-            : 22
-          : selected
-            ? 9
-            : point.severity === 'CRITICA'
-              ? 8
-              : point.severity === 'ALTA'
-                ? 7
-                : 5,
-        color: showHeat ? color : '#f4f4f5',
-        weight: showHeat ? 0 : 1.5,
-        opacity: showHeat ? 0.35 : 1,
-        fillColor: color,
-        fillOpacity: showHeat ? 0.22 : 0.94,
-      });
-
+              ? '#ef4444'
+              : '#facc15';
       if (showHeat) {
-        marker.addTo(point.kind === 'occurrence' ? eventHeatLayer : poiHeatLayer);
-      } else {
-        marker.bindTooltip(this.markerCode(point), {
-          permanent: true,
-          direction: 'center',
-          className: 'fallback-marker-code',
+        leaflet
+          .circleMarker([latitude, longitude], {
+            radius: point.kind === 'occurrence' ? 26 : 22,
+            color,
+            weight: 0,
+            opacity: 0.35,
+            fillColor: color,
+            fillOpacity: 0.22,
+            interactive: false,
+          })
+          .addTo(point.kind === 'occurrence' ? eventHeatLayer : poiHeatLayer);
+        continue;
+      }
+      let marker = this.fallbackPointMarkers.get(point.id);
+      if (!marker) {
+        const element = document.createElement('span');
+        if (point.kind === 'occurrence') {
+          const image = document.createElement('img');
+          image.src = `maps/pins/${point.category!.toLowerCase()}.svg`;
+          image.alt = '';
+          image.width = 32;
+          image.height = 44;
+          element.append(image);
+        } else {
+          element.className = 'fallback-poi-code';
+          element.textContent = this.markerCode(point);
+        }
+        marker = leaflet.marker([latitude, longitude], {
+          title: `${point.name} · ocorrência fictícia`,
+          alt: point.name,
+          bubblingMouseEvents: true,
+          icon: leaflet.divIcon({
+            html: element,
+            className: 'occurrence-pin',
+            iconSize: point.kind === 'occurrence' ? [32, 44] : [18, 18],
+            iconAnchor: point.kind === 'occurrence' ? [16, 42] : [9, 9],
+            popupAnchor: [0, -38],
+          }),
         });
         marker.on('click', () => {
+          if (this.useRadius() || this.mapPickPurpose()) return;
           this.selectedPointId.set(point.id);
           this.refreshMapData();
           leaflet
-            .popup({ closeButton: true, offset: [0, -8] })
-            .setLatLng([latitude, longitude])
-            .setContent(this.createRasterPointPopup(point))
+            .popup({ closeButton: true, offset: [0, -38] })
+            .setLatLng(marker!.getLatLng())
+            .setContent(
+              this.createRasterPointPopup(
+                this.allPoints().find((current) => current.id === point.id)!,
+              ),
+            )
             .openOn(map);
         });
         marker.addTo(pointsLayer);
+        this.fallbackPointMarkers.set(point.id, marker);
       }
+      const position = marker.getLatLng();
+      if (position.lng !== longitude || position.lat !== latitude)
+        marker.setLatLng([latitude, longitude]);
+      const image = marker.getElement()?.querySelector('img');
+      if (image && !image.src.endsWith(`/${point.category!.toLowerCase()}.svg`))
+        image.src = `maps/pins/${point.category!.toLowerCase()}.svg`;
+      marker.getElement()?.classList.toggle('is-selected', this.selectedPointId() === point.id);
     }
 
-    radiusLayer.clearLayers();
     if (this.useRadius() && !this.radiusInvalid()) {
       const center = this.searchCenter();
       const longitude = Number(center.longitude);
       const latitude = Number(center.latitude);
-      leaflet
-        .circle([latitude, longitude], {
-          radius: this.radiusMeters(),
-          color: SEARCH_RADIUS_COLOR,
-          opacity: 0.82,
-          weight: 2,
-          fillColor: SEARCH_RADIUS_COLOR,
-          fillOpacity: 0.18,
-        })
-        .addTo(radiusLayer);
-    }
+      const existing = radiusLayer.getLayers()[0] as import('leaflet').Circle | undefined;
+      if (existing) {
+        existing.setLatLng([latitude, longitude]).setRadius(this.radiusMeters());
+      } else
+        leaflet
+          .circle([latitude, longitude], {
+            radius: this.radiusMeters(),
+            color: SEARCH_RADIUS_COLOR,
+            opacity: 0.82,
+            weight: 2,
+            fillColor: SEARCH_RADIUS_COLOR,
+            fillOpacity: 0.18,
+            interactive: false,
+          })
+          .addTo(radiusLayer);
+    } else radiusLayer.clearLayers();
   }
 
   private createRasterPointPopup(point: DemoPoint): HTMLElement {
@@ -2645,14 +2829,39 @@ export class App implements AfterViewInit, OnDestroy {
   private refreshMapData(): void {
     const visibleIds = new Set(this.visiblePoints().map((point) => point.id));
     this.expandedResultDetailIds.update((ids) => ids.filter((id) => visibleIds.has(id)));
-    const source = this.map?.getSource('demo-points') as maplibregl.GeoJSONSource | undefined;
-    source?.setData(this.toGeoJson());
-    const occurrenceSource = this.map?.getSource('heat-occurrences') as
-      maplibregl.GeoJSONSource | undefined;
-    occurrenceSource?.setData(this.toGeoJson('occurrence'));
-    const poiSource = this.map?.getSource('heat-pois') as maplibregl.GeoJSONSource | undefined;
-    poiSource?.setData(this.toGeoJson('poi'));
-    this.updateMapLayers();
+    if (this.mapRefreshFrame !== undefined || (!this.map && !this.fallbackMap)) return;
+    this.mapRefreshFrame = requestAnimationFrame(() => {
+      this.mapRefreshFrame = undefined;
+      this.updateMapLayers();
+    });
+  }
+
+  private observeMapSize(): void {
+    this.mapResizeObserver?.disconnect();
+    if (typeof ResizeObserver === 'undefined') return;
+    const container = document.getElementById('map-canvas');
+    if (!container) return;
+    this.mapResizeObserver = new ResizeObserver((entries) => {
+      if (!entries.some((entry) => entry.contentRect.width > 0 && entry.contentRect.height > 0))
+        return;
+      this.map?.resize();
+      this.resizeFallbackMap();
+    });
+    this.mapResizeObserver.observe(container);
+  }
+
+  private resizeFallbackMap(): void {
+    const map = this.fallbackMap;
+    if (!map) return;
+    const container = map.getContainer();
+    const size = map.getSize();
+    if (
+      container.clientWidth > 0 &&
+      container.clientHeight > 0 &&
+      (size.x !== container.clientWidth || size.y !== container.clientHeight)
+    ) {
+      map.invalidateSize();
+    }
   }
 
   private updateMapLayers(): void {
@@ -2668,6 +2877,13 @@ export class App implements AfterViewInit, OnDestroy {
     occurrenceSource?.setData(this.toGeoJson('occurrence'));
     const poiSource = this.map?.getSource('heat-pois') as maplibregl.GeoJSONSource | undefined;
     poiSource?.setData(this.toGeoJson('poi'));
+    if (this.map?.getLayer('demo-occurrence-pins')) {
+      this.map.setLayoutProperty(
+        'demo-occurrence-pins',
+        'visibility',
+        this.heatmap() ? 'none' : 'visible',
+      );
+    }
     if (this.heatmap() && this.map?.getLayer('demo-points-dot')) {
       this.map.setLayoutProperty('demo-points-dot', 'visibility', 'none');
       if (this.map.getLayer('demo-points-code')) {
@@ -2744,6 +2960,7 @@ export class App implements AfterViewInit, OnDestroy {
           id: point.id,
           geometry: { type: 'Point', coordinates: point.coordinates },
           properties: {
+            recordId: point.id,
             kind: point.kind,
             name: point.name,
             description: point.description,

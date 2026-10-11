@@ -157,3 +157,16 @@ Limites: sem backend Java, API, login, persistência no servidor, autorização/
 - **XLSX:** exportação pt-BR e horário de Brasília; largura/alinhamento, autofiltro, cabeçalho fixo e impressão paisagem. Download passou nos dois navegadores; ZIP/XML validado e planilha conferida no LibreOffice (registro da rodada anterior).
 - **Execução:** `bash harness.sh frontend` passou com lint, 47 testes e build; bundle inicial 439,56 kB (limite 500 kB, sem warnings). MapLibre 1,07 MB/CSS 83,13 kB e Leaflet 149,42 kB/CSS 11,07 kB são chunks sob demanda. `npm run test:e2e -- --workers=1`: 15 passados, 1 ignorado (fallback sem WebGL2 só executa no projeto Firefox). `bash harness.sh planning`, `bash harness.sh docs` e `git diff --check` retornaram 0/sem erros.
 - **Escopo preservado:** nenhuma API, credencial, backend, banco ou dado real de ocorrência foi acrescentado. O mapa usa provedores públicos sem SLA; revisão de termos, contato e capacidade fica pendente antes da publicação. QA não substitui leitor de tela, hardware móvel ou validação operacional.
+
+
+## Ajuste cartográfico — 11/10/2026
+
+A base anterior descrita acima foi substituída por Alidade Smooth vetorial/raster para aproximar o visual da referência e conservar estilo/escala entre MapLibre e Leaflet. Recuperação de GPU/estilo permanece ativa. O provedor dispensa autenticação somente em localhost/127.0.0.1; outros hosts exigem domínio autorizado/chave própria. Nenhum serviço foi contratado. CARTO Voyager exato depende de chave própria; nenhuma credencial da referência foi copiada. Diagnóstico e fontes em `compatibilidade-mapas.md`; estado e evidências atuais em `../PLAN.md`.
+
+## Desempenho, raio e massa metropolitana — 11/10/2026
+
+Atualiza o raio demonstrativo para 100–25.000 m, com clique esquerdo redefinindo o centro enquanto o filtro está ligado e arraste alterando só a câmera. 75 ocorrências fictícias (25 por categoria) em nove municípios metropolitanos, com dois POIs separados. Mapa público reaproveitado entre telas, ResizeObserver e atualização por quadro sem envio duplicado. `harness frontend`: lint, 54 testes e build 444,20 kB; matriz E2E completa: 38 passados, zero ignorados. Detalhes, proveniência, limites do desempenho e análise de Google Maps em [mapas-desempenho-google.md](mapas-desempenho-google.md). Nenhuma fase de backend/banco ou migração de provedor foi iniciada.
+
+## Atualização frontend — referência visual, pins e dispersão (11/10/2026)
+
+Início do raio passa a 1.000 m; mínimo 100 m, máximo 25.000 m e passos de 100 m mantidos. Intervalo em uma coluna responsiva. Segurança conserva todas as 25 posições, enquanto Trânsito/Contingência são dispersos deterministicamente em recortes urbanos em terra, com separação mínima de 900 m. MapLibre usa estilo Bright local personalizado, Leaflet usa Bright raster e reaproveita pins/círculo. Pins verde/carro, vermelho/pistola, amarelo/exclamação, borda preta e círculo branco nas duas engines. Fontes, licenças, trade-offs, medições e evidências atuais em [mapas-referencia-visual.md](mapas-referencia-visual.md) e [PLAN.md](../PLAN.md). Nenhuma API, persistência ou publicação foi iniciada.

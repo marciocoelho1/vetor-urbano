@@ -68,7 +68,8 @@ export interface ImportedDataset {
 const TIME_ZONE = 'America/Sao_Paulo';
 const EARTH_RADIUS_METERS = 6_371_008.8;
 export const MINIMUM_RADIUS_METERS = 100;
-export const MAXIMUM_RADIUS_METERS = 5000;
+export const INITIAL_RADIUS_METERS = 1000;
+export const MAXIMUM_RADIUS_METERS = 25_000;
 export const RADIUS_STEP_METERS = 100;
 
 function zonedParts(date: Date, timeZone = TIME_ZONE): Record<string, number> {
