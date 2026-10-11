@@ -1,0 +1,257 @@
+{
+  "date": "2026-10-11",
+  "environment": {
+    "browser": "Chromium Playwright 156.0.8078.4",
+    "mode": "headless",
+    "graphics": "SwiftShader (software)",
+    "viewportPixels": [
+      1280,
+      900
+    ],
+    "mapPixels": [
+      800,
+      480
+    ],
+    "deviceScaleFactor": 1,
+    "network": "real, uncontrolled; warmed before sampling"
+  },
+  "method": {
+    "centerGeoJSON": [
+      -43.1954,
+      -22.9037
+    ],
+    "zoomMapLibre": 12,
+    "zoomLeaflet": 13,
+    "passes": 3,
+    "mouseMovesPerPass": 48,
+    "mouseStepPixels": 3,
+    "waitBetweenMovesMs": 16,
+    "postDragSamplingMs": 300,
+    "measure": "requestAnimationFrame callback intervals; percentile nearest rank",
+    "data": "1671 polygons on all maps; app also has 75 synthetic occurrences",
+    "reference": "public HTML snapshot; only map-instance handle instrumented",
+    "vectorCondition": "real WebGL, accelerated renderer identity simulated to force vector on software GPU",
+    "automaticCondition": "no renderer override; app selects Leaflet",
+    "rasterCondition": "WebGL2 unavailable simulated"
+  },
+  "results": [
+    {
+      "engine": "reference",
+      "metadata": {
+        "bounds": {
+          "_southWest": {
+            "lat": -22.94163751815005,
+            "lng": -43.263988494873054
+          },
+          "_northEast": {
+            "lat": -22.865736250554594,
+            "lng": -43.126659393310554
+          }
+        },
+        "canvas": {
+          "x": 20,
+          "y": 20,
+          "width": 800,
+          "height": 480,
+          "top": 20,
+          "right": 820,
+          "bottom": 500,
+          "left": 20
+        },
+        "layers": 3351,
+        "loadedTiles": 12,
+        "markers": 0
+      },
+      "runs": [
+        {
+          "frames": 115,
+          "medianMs": 16.699999999999818,
+          "p95Ms": 16.799999999999272,
+          "gapsOver50Ms": 0
+        },
+        {
+          "frames": 114,
+          "medianMs": 16.699999999999818,
+          "p95Ms": 16.700000000000728,
+          "gapsOver50Ms": 0
+        },
+        {
+          "frames": 115,
+          "medianMs": 16.69999999999891,
+          "p95Ms": 16.700000000000728,
+          "gapsOver50Ms": 0
+        }
+      ]
+    },
+    {
+      "engine": "vector",
+      "metadata": {
+        "bounds": {
+          "_sw": {
+            "lng": -43.26406455078123,
+            "lat": -22.941645321491507
+          },
+          "_ne": {
+            "lng": -43.12673544921893,
+            "lat": -22.865744058264966
+          }
+        },
+        "canvas": {
+          "x": 20,
+          "y": 20,
+          "width": 800,
+          "height": 480,
+          "top": 20,
+          "right": 820,
+          "bottom": 500,
+          "left": 20
+        },
+        "layers": 40,
+        "loadedTiles": 0,
+        "markers": 0
+      },
+      "runs": [
+        {
+          "frames": 77,
+          "medianMs": 16.699999999999818,
+          "p95Ms": 50.100000000000364,
+          "gapsOver50Ms": 5
+        },
+        {
+          "frames": 64,
+          "medianMs": 50,
+          "p95Ms": 50.100000000000364,
+          "gapsOver50Ms": 9
+        },
+        {
+          "frames": 63,
+          "medianMs": 49.900000000001455,
+          "p95Ms": 50.100000000000364,
+          "gapsOver50Ms": 10
+        }
+      ]
+    },
+    {
+      "engine": "automatic",
+      "metadata": {
+        "bounds": {
+          "_southWest": {
+            "lat": -22.94163751815005,
+            "lng": -43.263988494873054
+          },
+          "_northEast": {
+            "lat": -22.865736250554594,
+            "lng": -43.126659393310554
+          }
+        },
+        "canvas": {
+          "x": 20,
+          "y": 20,
+          "width": 800,
+          "height": 480,
+          "top": 20,
+          "right": 820,
+          "bottom": 500,
+          "left": 20
+        },
+        "layers": 3422,
+        "loadedTiles": 12,
+        "markers": 75
+      },
+      "runs": [
+        {
+          "frames": 114,
+          "medianMs": 16.699999999999818,
+          "p95Ms": 16.799999999999272,
+          "gapsOver50Ms": 0
+        },
+        {
+          "frames": 115,
+          "medianMs": 16.699999999999818,
+          "p95Ms": 16.800000000000182,
+          "gapsOver50Ms": 0
+        },
+        {
+          "frames": 114,
+          "medianMs": 16.69999999999891,
+          "p95Ms": 16.700000000000728,
+          "gapsOver50Ms": 0
+        }
+      ]
+    },
+    {
+      "engine": "raster",
+      "metadata": {
+        "bounds": {
+          "_southWest": {
+            "lat": -22.94163751815005,
+            "lng": -43.263988494873054
+          },
+          "_northEast": {
+            "lat": -22.865736250554594,
+            "lng": -43.126659393310554
+          }
+        },
+        "canvas": {
+          "x": 20,
+          "y": 20,
+          "width": 800,
+          "height": 480,
+          "top": 20,
+          "right": 820,
+          "bottom": 500,
+          "left": 20
+        },
+        "layers": 3422,
+        "loadedTiles": 12,
+        "markers": 75
+      },
+      "runs": [
+        {
+          "frames": 115,
+          "medianMs": 16.699999999999818,
+          "p95Ms": 16.700000000000728,
+          "gapsOver50Ms": 0
+        },
+        {
+          "frames": 114,
+          "medianMs": 16.699999999999818,
+          "p95Ms": 16.700000000000728,
+          "gapsOver50Ms": 0
+        },
+        {
+          "frames": 112,
+          "medianMs": 16.69999999999891,
+          "p95Ms": 16.700000000000728,
+          "gapsOver50Ms": 0
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Not actual paint latency or hardware GPU FPS.",
+    "No controlled cold-start or mobile-network p95 measurement.",
+    "Three passes in one desktop CI environment; not an SLA.",
+    "Reference contains no synthetic app pins."
+  ],
+  "retinaSprites": [
+    {
+      "id": "TRANSITO",
+      "width": 64,
+      "height": 88,
+      "pixelRatio": 2
+    },
+    {
+      "id": "SEGURANCA",
+      "width": 64,
+      "height": 88,
+      "pixelRatio": 2
+    },
+    {
+      "id": "CONTINGENCIA",
+      "width": 64,
+      "height": 88,
+      "pixelRatio": 2
+    }
+  ]
+}

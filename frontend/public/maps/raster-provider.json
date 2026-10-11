@@ -1,0 +1,10 @@
+{
+  "provider": "Stadia Maps — Alidade Bright (fallback colorido)",
+  "tileUrl": "https://tiles.stadiamaps.com/tiles/alidade_bright/{z}/{x}/{y}.png",
+  "maxZoom": 20,
+  "attribution": "&copy; <a href=\"https://stadiamaps.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Stadia Maps</a> · &copy; <a href=\"https://openmaptiles.org/\" target=\"_blank\" rel=\"noopener noreferrer\">OpenMapTiles</a> · &copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener noreferrer\">OpenStreetMap contributors</a>",
+  "license": "OpenStreetMap data: ODbL; style: see Stadia Maps attribution and terms",
+  "usagePolicy": "https://docs.stadiamaps.com/authentication/",
+  "referenceDate": "2026-10-11",
+  "limitations": "Localhost/127.0.0.1 development only without authentication, subject to rate limits. Non-local access requires authorized domain or own API key; no subscription provisioned."
+}

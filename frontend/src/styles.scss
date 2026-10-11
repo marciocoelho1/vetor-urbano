@@ -1,0 +1,111 @@
+@use './app/workspace';
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+:root {
+  color-scheme: dark;
+  --color-bg-base: #09090b;
+  --color-bg-surface: #18181b;
+  --color-border-subtle: #27272a;
+  --color-text-main: #f4f4f5;
+  --color-text-muted: #a1a1aa;
+  --accent: #10b981;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+  background: var(--color-bg-base);
+  color: var(--color-text-main);
+}
+body {
+  min-height: 100dvh;
+  font-family: 'Geist', 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+h1,
+h2,
+h3 {
+  font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+}
+:focus-visible {
+  outline: 2px solid #6ee7b7;
+  outline-offset: 3px;
+}
+
+.map-popup {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  color: #27272a;
+}
+.map-popup strong {
+  font-size: 0.82rem;
+}
+.leaflet-tooltip.fallback-marker-code {
+  padding: 2px 3px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  box-shadow: none;
+  color: #18181b;
+  font-family: 'Noto Sans', sans-serif;
+  font-size: 0.56rem;
+  font-weight: 700;
+  text-shadow:
+    0 0 2px #fff,
+    0 0 4px #fff;
+  pointer-events: none;
+}
+.leaflet-tooltip.fallback-marker-code::before {
+  display: none;
+}
+.map-popup p {
+  margin: 0;
+  color: #52525b;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+.map-popup span,
+.map-popup small {
+  color: #71717a;
+  font-size: 0.66rem;
+}
+
+#map-canvas .occurrence-pin {
+  border: 0;
+  background: transparent;
+}
+#map-canvas .occurrence-pin img {
+  display: block;
+  width: 32px;
+  height: 44px;
+  transform-origin: 50% 95%;
+}
+#map-canvas .occurrence-pin.is-selected img {
+  transform: scale(1.15);
+}
+#map-canvas .fallback-poi-code {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid #111;
+  border-radius: 50%;
+  background: #a3e635;
+  color: #111;
+  font-size: 10px;
+  font-weight: 700;
+}
+.legend-pin {
+  width: 15px;
+  height: 21px;
+  flex-shrink: 0;
+}

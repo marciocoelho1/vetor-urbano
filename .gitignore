@@ -7,8 +7,36 @@
 *.p12
 *.pfx
 
-# Java and build tools
+# Generated dependencies and builds
+node_modules/
+dist/
 target/
+.angular/cache/
+coverage/
+
+# Hermes working data (project skills remain versioned)
+.hermes/cache/
+.hermes/plans/
+
+# Editor and operating-system noise
+.DS_Store
+Thumbs.db
+*.log
+
+# Local worktrees and extraction outputs (sources/evidence stay versioned)
+.worktrees/
+mapa-rj-extraction/*
+!mapa-rj-extraction/LEIA-ME.md
+!mapa-rj-extraction/extract.py
+!mapa-rj-extraction/verificacao.json
+
+# Video tooling and caches
+**/.tools/
+**/.hyperframes/
+**/.thumbnails/
+**/.waveform-cache/
+
+# Additional protections preserved from the previous main
 *.class
 *.jar
 *.war
@@ -20,33 +48,16 @@ target/
 build/
 .gradle/
 out/
-
-# Node and frontend dependencies/builds
-node_modules/
-dist/
 .angular/
-.angular/cache/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-
-# Logs and test coverage
 logs/
-*.log
-coverage/
 .nyc_output/
 *.lcov
-
-# IDE and operating-system files
-.DS_Store
-Thumbs.db
 .idea/
 *.iml
 .vscode/
 *.swp
 *.swo
-
-# Temporary Hermes working data (project skills remain versioned)
-.hermes/cache/
-.hermes/plans/

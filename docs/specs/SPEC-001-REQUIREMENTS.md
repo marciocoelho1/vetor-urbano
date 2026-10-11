@@ -1,3 +1,5 @@
+> **Legado preservado na consolidação de 11/10/2026.** Este documento descreve decisões anteriores e mantém seus IDs e conteúdo histórico. O estado atual está em [escopo atual](../escopo.md); diferenças de categorias, publicação, RF/RNF e autenticação continuam pendentes de reconciliação em R0. Não implementar escrita pública nem aplicar o SQL com base neste documento. Ver [relatório da consolidação](../consolidacao-branches-2026-10.md).
+
 # SPEC-001 — Requisitos do Vetor Urbano
 
 | Campo                   | Valor                                                                                                     |

@@ -1,3 +1,5 @@
+> **Legado preservado na consolidação de 11/10/2026.** Este documento descreve decisões anteriores e mantém seus IDs e conteúdo histórico. O estado atual está em [arquitetura atual](../arquitetura.md) e [PLAN](../../PLAN.md); diferenças de categorias, publicação, RF/RNF e autenticação continuam pendentes de reconciliação em R0. Não implementar escrita pública nem aplicar o SQL com base neste documento. Ver [relatório da consolidação](../consolidacao-branches-2026-10.md).
+
 # Vetor Urbano — Arquitetura e roadmap do MVP
 
 > **Estado do produto:** há uma demonstração interativa; consulta e registro reais ainda não funcionam ponta a ponta.

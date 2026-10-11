@@ -1,3 +1,5 @@
+> **Legado preservado na consolidação de 11/10/2026.** Este documento descreve decisões anteriores e mantém seus IDs e conteúdo histórico. O estado atual está em [escopo](../docs/escopo.md) e [arquitetura](../docs/arquitetura.md); diferenças de categorias, publicação, RF/RNF e autenticação continuam pendentes de reconciliação em R0. Não implementar escrita pública nem aplicar o SQL com base neste documento. Ver [relatório da consolidação](../docs/consolidacao-branches-2026-10.md).
+
 # Análise da modelagem inicial — Vetor Urbano
 
 **Artefato examinado:** vetor-urbano-api/src/main/resources/db/migration/V1__Initial_Schema.sql

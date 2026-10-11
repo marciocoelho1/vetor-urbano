@@ -1,0 +1,23 @@
+{
+  "TRANSITO": {
+    "x": 0,
+    "y": 0,
+    "width": 64,
+    "height": 88,
+    "pixelRatio": 2
+  },
+  "SEGURANCA": {
+    "x": 64,
+    "y": 0,
+    "width": 64,
+    "height": 88,
+    "pixelRatio": 2
+  },
+  "CONTINGENCIA": {
+    "x": 128,
+    "y": 0,
+    "width": 64,
+    "height": 88,
+    "pixelRatio": 2
+  }
+}

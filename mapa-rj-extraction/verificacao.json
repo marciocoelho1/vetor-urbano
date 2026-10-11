@@ -1,0 +1,26 @@
+{
+  "sourceUrl": "https://dadosderiscos.com.br/mapa-rj-risco-faccoes.html",
+  "extractedAt": "2026-10-10T09:58:33.147610-03:00",
+  "sourceSha256": "4409a89b6f32f01bd1e62fa5cd845c76c3bcb672fc6e120f1c752bfe8d4d556d",
+  "features": 1671,
+  "coordinatePairsIncludingClosingPoints": 49294,
+  "rings": 1671,
+  "counts": {
+    "CV": 1000,
+    "TCP": 295,
+    "ADA": 92,
+    "MIL": 91,
+    "LJ": 130,
+    "MNI": 42,
+    "NEU": 21
+  },
+  "exactDuplicateFeatures": 0,
+  "ringIssues": [],
+  "checks": [
+    "Todos os registros extraídos; nenhum filtro por grupo",
+    "Coordenadas preservadas numericamente sem simplificação",
+    "Todos os pares têm duas coordenadas finitas dentro dos limites geográficos",
+    "Classificações conferidas com o registro FAC da página",
+    "Não foi executada validação topológica de interseções, sobreposições ou orientação dos anéis"
+  ]
+}
