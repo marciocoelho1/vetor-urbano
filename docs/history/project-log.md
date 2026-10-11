@@ -7,6 +7,7 @@ Este arquivo registra alterações concluídas no Vetor Urbano para manter conte
 - **Arquivos:** `apps/web/`, `apps/api/`, `scripts/verify.sh`, wrapper raiz, `tools/map-extraction/`, `assets/brand/video/`, documentação agrupada em `docs/`, README/AGENTS/PLAN/patch notes, `CONTRIBUTING.md` e `.github/pull_request_template.md`.
 - **Alteração:** separados aplicativos, scripts, ferramentas, materiais de marca, documentação atual, referências e legado. Pacote npm/projeto Angular identificados como web; links, ignores e verificações atualizados para os novos caminhos. O README da ferramenta deixa de ser sobrescrito pelo relatório gerado.
 - **Motivo:** tornar responsabilidades e fluxo de contribuição claros, eliminando a mistura de pastas genéricas e prefixadas com o nome do produto.
+- **Publicação:** organização publicada na `main` pelo commit `ff4729c`; hashes local/remoto, default e única branch remota conferidos. Fechamento documental posterior preserva também a execução direta de `harness.sh`.
 - **Preservação:** código web/testes/assets, referências, SQL, vídeo e skills conferidos por SHA-256; versões/dependências do lockfile mantidas. Nenhuma alteração de funcionalidade ou início de backend.
 - **Verificação:** instalação, lint, 56 testes, build 449,26 kB e 44 E2E/zero ignorados em Firefox/Chromium passaram nos novos caminhos; links/Bash, wrapper/aliases fora da raiz, ignores e smoke isolado de extração passaram. Evidências finais em [repository-layout-2026-10-11.json](../evidence/repository-layout-2026-10-11.json).
 

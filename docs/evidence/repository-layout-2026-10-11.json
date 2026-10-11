@@ -188,7 +188,12 @@
       "motivo": "modo desconhecido"
     },
     "gitignore": "HTML bruto, CSV, node_modules, ferramentas e saídas E2E ignorados",
-    "scan_padroes_conhecidos_credenciais": "nenhum indício; não é auditoria completa de segurança"
+    "scan_padroes_conhecidos_credenciais": "nenhum indício; não é auditoria completa de segurança",
+    "wrapper_execucao_direta_docs": {
+      "comando": "./harness.sh docs",
+      "status": 0,
+      "modo_executavel_preservado": true
+    }
   },
   "limites": [
     "Somente organização, nomes, documentação e caminhos; sem mudança de regras/dados/provedor.",
@@ -196,5 +201,15 @@
     "Nenhum workflow CI ou deploy criado.",
     "Fonte final editável do vídeo permanece ausente.",
     "Downloads brutos, worktrees e caches continuam locais/ignorados."
-  ]
+  ],
+  "publicacao": {
+    "commit_estrutura": "ff4729c81aa7197dfd3d9cbfa52036f0d72ab3c6",
+    "branch": "main",
+    "hash_local_igual_origin_main": true,
+    "default": "main",
+    "branches_remotas": [
+      "main"
+    ],
+    "fechamento": "Documentação final e modo executável do wrapper em commit posterior; conferir hashes depois do push."
+  }
 }
