@@ -4,7 +4,7 @@ Aplicação demonstrativa para consulta e análise geográfica de ocorrências, 
 
 ## Branch e continuidade
 
-A branch de continuidade é **`main`**. A consolidação autorizada em 11/10/2026 incorpora o histórico de `master`, as melhorias locais mais recentes e o conteúdo exclusivo da antiga `main`, sem reescrever commits. A aplicação atual fica em `frontend/`; `vetor-urbano-web/` foi substituído por essa versão. A comparação dos históricos, as divergências e as evidências estão em [docs/consolidacao-branches-2026-10.md](docs/consolidacao-branches-2026-10.md).
+A branch de continuidade é **`main`**. A consolidação publicada em 11/10/2026 incorpora o histórico de `master`, as melhorias locais mais recentes e o conteúdo exclusivo da antiga `main`, sem reescrever commits. **`master` foi excluída no remoto e localmente após conferir a preservação dos históricos.** A aplicação atual fica em `frontend/`; `vetor-urbano-web/` foi substituído por essa versão. A comparação dos históricos, as divergências e as evidências estão em [docs/consolidacao-branches-2026-10.md](docs/consolidacao-branches-2026-10.md).
 
 Requisitos e decisões atuais ficam em `docs/escopo.md`, `docs/arquitetura.md` e `PLAN.md`. Os arquivos em `docs/specs/`, `docs/architecture/`, `planejamento/` e o SQL em `vetor-urbano-api/` são **legado preservado para reconciliação**, não contratos executáveis nem autorização para desenvolver uma API de escrita pública. Os IDs históricos são mantidos em seus documentos de origem; diferenças de categorias, RF/RNF e moderação precisam ser resolvidas em R0.
 

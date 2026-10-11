@@ -5,7 +5,7 @@ Este arquivo registra alterações concluídas no Vetor Urbano para manter conte
 ## 2026-10-11 — Consolidação da versão mais recente na `main`
 
 - **Arquivos:** `frontend/`; README/PLAN/patch notes; documentação atual e histórica; `harness.sh` e wrapper `harness/verify.sh`; `.gitignore`; materiais de extração e vídeo; SQL histórico preservado.
-- **Alteração:** merge dos históricos de `main` e `master`, incluindo melhorias locais de mapas/pins/raio/fixtures. Aplicação ativa em `frontend/`; documentos e SQL exclusivos da antiga `main` preservados como legado. Referências originais intactas.
+- **Alteração:** merge dos históricos de `main` e `master`, incluindo melhorias locais de mapas/pins/raio/fixtures, publicado em `main`. `master` remota/local removidas após conferência; `main` confirmada como default e única branch remota. Aplicação ativa em `frontend/`; documentos e SQL exclusivos da antiga `main` preservados como legado. Referências originais intactas.
 - **Motivo:** concentrar a continuidade na branch default e remover `master` depois de verificar a preservação de conteúdo/histórico. A auditoria corrigiu os registros de branches independentes e de fontes editáveis do vídeo presentes.
 - **Verificações:** lint, 56 testes e build de 449,26 kB na árvore consolidada; instalação pelo lockfile sem vulnerabilidades reportadas; documentos/sintaxe e auditoria de conteúdo passaram. Resultado final de E2E/publicação em [relatório da consolidação](consolidacao-branches-2026-10.md) e [evidências](evidencias/consolidacao-2026-10-11.json).
 - **Limites:** frontend-only; divergências de contrato continuam em R0; fontes finais do vídeo ausentes. Nenhum backend, banco, nova coleta ou renderização foi iniciado.

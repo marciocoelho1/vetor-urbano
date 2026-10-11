@@ -57,4 +57,8 @@ Evidências estruturadas em [consolidacao-2026-10-11.json](evidencias/consolidac
 
 ## Publicação
 
-A `master` remota só será excluída após publicar a consolidação em `main` e confirmar que seu histórico está contido na `main` remota. A verificação final deve conferir hashes local/remoto, branch default, inexistência de `master`, ancestrais das duas origens e estado limpo do diretório principal. Sem `push --force`.
+Consolidação publicada pelo commit de merge `fa5bff7dd15aaaf3cb19c995b9f0c30ccdb63302`. Após o push, `git fetch`/`git ls-remote` confirmaram hashes iguais de `main` local e remota; `gh repo view` confirmou `main` como default. `git merge-base --is-ancestor` confirmou que os commits originais de `main`, `master` e o snapshot local estão contidos em `origin/main`.
+
+Só então `master` foi excluída no remoto, com conferência do SHA esperado para evitar remover uma branch alterada durante a tarefa, e removida localmente por `git branch -d`. `git ls-remote --heads origin` retornou **somente `refs/heads/main`**. O diretório principal foi colocado em `main`, com estado limpo após o merge; o worktree auxiliar existente foi preservado em HEAD destacado. O código do frontend foi conferido novamente contra o backup inicial: 49 arquivos idênticos.
+
+Este registro de fechamento é um commit documental posterior ao merge. Depois de seu push, conferir novamente sincronização e ausência de `master`; as verificações de aplicação acima continuam válidas, pois nenhum arquivo executável do frontend foi alterado no fechamento. Não houve force-push da `main`.

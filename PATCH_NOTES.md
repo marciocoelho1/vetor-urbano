@@ -2,7 +2,7 @@
 
 ## 2026-10-11 — Consolidação de main/master e documentação
 
-- Unificada a aplicação mais recente em `frontend/`, incluindo as melhorias locais de paleta Bright, pins, raio de 25 km, fixtures e recuperação 2D. Merge preserva os históricos; `vetor-urbano-web/` substituído.
+- Unificada a aplicação mais recente em `frontend/`, incluindo as melhorias locais de paleta Bright, pins, raio de 25 km, fixtures e recuperação 2D. Merge publicado em `main` preserva os históricos; `vetor-urbano-web/` substituído. `master` remota/local excluídas após conferência dos ancestrais e da sincronização.
 - Preservados requisitos, pipeline, histórico e rascunho SQL exclusivos da antiga `main`; documentos sinalizados como legado para reconciliar em R0, sem renumerar IDs ou habilitar escrita pública.
 - Atualizados README principal/frontend, PLAN, arquitetura, escopo e histórico. O wrapper `harness/verify.sh` usa o executor atual `harness.sh`. Proteções de `.gitignore` consolidadas; caches/worktrees/downloads brutos locais excluídos.
 - Preservados script/evidências de extração e MP4 de marca. Corrigida a documentação: os fontes finais editáveis do vídeo estão ausentes; o template disponível não reproduz o filme.

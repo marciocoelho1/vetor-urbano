@@ -88,5 +88,19 @@
     "Fontes finais da composição de vídeo ausentes; template não reproduz MP4.",
     "Divergências de requisitos/contratos históricos permanecem no gate R0.",
     "Downloads brutos de extração e caches locais não versionados."
-  ]
+  ],
+  "publicacao": {
+    "commit_merge": "fa5bff7dd15aaaf3cb19c995b9f0c30ccdb63302",
+    "default_branch": "main",
+    "branches_remotas_confirmadas": [
+      "main"
+    ],
+    "master_remota_excluida": true,
+    "master_local_excluida": true,
+    "historicos_originais_contidos_em_origin_main": true,
+    "snapshot_local_contido_em_origin_main": true,
+    "hash_main_local_igual_remoto_no_merge": true,
+    "frontend_conferido_contra_backup_inicial": 49,
+    "documentacao_fechamento": "Commit posterior ao merge registra esta conferência; conferir sincronização novamente após seu push."
+  }
 }
